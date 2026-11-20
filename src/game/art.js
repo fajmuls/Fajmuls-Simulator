@@ -1,3 +1,5 @@
+import { ITEMS } from '../core/catalog.js';
+
 // Pixel art dibuat lewat kode (tanpa berkas gambar) supaya ringan dan mudah diubah.
 // Setiap karakter pada grid mewakili satu piksel; '.' = transparan.
 
@@ -94,21 +96,13 @@ const ICONS = {
     rows: ['..bbbb..', '.bbbbbb.', 'bbyyyybb', 'bbyyyybb', 'bbbbbbbb', 'bbbbbbbb', '.bbbbbb.', '........'],
     pal: { b: '#92400e', y: '#fde68a' },
   },
-  catfish: {
-    rows: ['........', 'a.....a.', '.aaaaaa.', 'aEaaaaaa', '.aaaaaaa', '.a.aa..a', '........', '........'],
-    pal: { a: '#6b7280', E: '#f9fafb' },
-  },
-  goldfish: {
-    rows: ['........', '..oo..o.', '.oooooo.', 'oEoooooo', '.oooooo.', '..oo..o.', '........', '........'],
-    pal: { o: '#f97316', E: '#1b1b1b' },
-  },
-  koi: {
-    rows: ['........', '..rw..r.', '.rwwrww.', 'wEwwrwww', '.wrwwrw.', '..ww..w.', '........', '........'],
-    pal: { r: '#dc2626', w: '#f9fafb', E: '#1b1b1b' },
-  },
   coin: {
     rows: ['..yyyy..', '.yYYYYy.', 'yYyyyyYy', 'yYyYYyYy', 'yYyYYyYy', 'yYyyyyYy', '.yYYYYy.', '..yyyy..'],
     pal: { y: '#facc15', Y: '#ca8a04' },
+  },
+  seed: {
+    rows: ['..gggg..', '.gggggg.', 'bbbbbbbb', 'bYbbbbYb', 'bbYYYYbb', 'bbbbbbbb', 'bbbbbbbb', '.bbbbbb.'],
+    pal: { g: '#84cc16', b: '#a16207', Y: '#fde68a' },
   },
   plant: {
     rows: ['..g..g..', '.ggggggg', '..gggg..', '...gg...', '..bbbb..', '..bbbb..', '...bb...', '........'],
@@ -116,9 +110,28 @@ const ICONS = {
   },
 };
 
+// Template hewan 8x8: a = badan, b = aksen, w = perut/terang, E = mata
+const TEMPLATES = {
+  fish: ['........', '..aaa..b', '.aaaaabb', 'aEaawabb', 'aaaaaabb', '.aaaaabb', '..aaa..b', '........'],
+  bird: ['..aaa...', '.aaaaa..', '.aEaabb.', '.aaaa...', 'aaaawa..', '.aawwaa.', '..aaaa..', '..b..b..'],
+  lizard: ['........', '.....aa.', '..aaaaEa', 'aaaaaaaa', '.bbaabb.', 'b.baab.b', '........', '........'],
+  small: ['.aa..aa.', 'aaaaaaaa', 'aEaaaaEa', 'aaabbaaa', '.aawwaa.', 'aawwwwaa', '.aawwaa.', '..b..b..'],
+  rabbit: ['.a....a.', '.a....a.', '.aaaaaa.', 'aEaaaaEa', 'aaabbaaa', '.aawwaa.', 'aawwwwaa', '.b....b.'],
+};
+
 export function buildIconTextures(scene) {
   for (const [name, def] of Object.entries(ICONS)) {
     addCanvas(scene, `icon_${name}`, drawGrid(def.rows, def.pal, 3));
+  }
+  for (const it of ITEMS) {
+    const tpl = TEMPLATES[it.icon];
+    if (tpl) {
+      addCanvas(scene, `icon_${it.id}`, drawGrid(tpl, { E: '#1b1b1b', ...it.pal }, 3));
+    } else {
+      // perlengkapan memakai ikon dasar
+      const base = ICONS[it.icon];
+      addCanvas(scene, `icon_${it.id}`, drawGrid(base.rows, base.pal, 3));
+    }
   }
 }
 

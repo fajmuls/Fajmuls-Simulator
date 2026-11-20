@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { ITEMS, getItem, getQuality } from '../core/catalog.js';
+import { CATEGORIES, getItem, getQuality, itemsOf } from '../core/catalog.js';
 import { DAY_LENGTH_SEC } from '../core/engine.js';
 import { hashSeed } from '../core/rng.js';
 import {
@@ -22,7 +22,8 @@ const BROWSE_TIME = 0.9;
 const PAY_TIME = 0.7;
 
 const rupiah = (n) => 'Rp ' + n.toLocaleString('id-ID');
-const shelfX = (i) => 30 + i * 60;
+const shelfX = (i) => 40 + i * 70;
+const catIdx = (catId) => CATEGORIES.findIndex((c) => c.id === catId);
 
 export class ShopScene extends Phaser.Scene {
   constructor(engine, hooks = {}) {
@@ -45,17 +46,21 @@ export class ShopScene extends Phaser.Scene {
     buildIconTextures(this);
     buildCustomerTextures(this);
     addBackground(this, 'shop_bg', buildShopBackground(this, W, H));
-    buildShelfTexture(this, 'shelf', 56);
+    buildShelfTexture(this, 'shelf', 64);
 
     this.add.image(0, 0, 'shop_bg').setOrigin(0, 0).setDepth(0);
 
     this.shelfLabels = [];
-    ITEMS.forEach((it, i) => {
+    this.shelfCovers = [];
+    CATEGORIES.forEach((c, i) => {
       this.add.image(shelfX(i), 60, 'shelf').setOrigin(0.5, 0).setDepth(1);
       this.shelfLabels.push(
-        this.add.text(shelfX(i), 52, it.name.split(' ')[0], { fontFamily: 'monospace', fontSize: '9px', color: '#3b2210' }).setOrigin(0.5, 1).setDepth(2),
+        this.add.text(shelfX(i), 52, c.short, { fontFamily: 'monospace', fontSize: '9px', color: '#3b2210', fontStyle: 'bold' }).setOrigin(0.5, 1).setDepth(2),
       );
     });
+    this.sign = this.add.text(W / 2, 12, 'PASAR SATWA', { fontFamily: 'monospace', fontSize: '13px', color: '#fde68a', fontStyle: 'bold', stroke: '#3b2210', strokeThickness: 3 }).setOrigin(0.5, 0).setDepth(3);
+    this.signStars = this.add.text(W / 2, 28, '', { fontFamily: 'monospace', fontSize: '10px', color: '#fbbf24', stroke: '#3b2210', strokeThickness: 3 }).setOrigin(0.5, 0).setDepth(3);
+    this.decor = this.add.graphics().setDepth(1);
     this.add.image(8, 250, 'icon_plant').setOrigin(0, 0.5).setScale(1.2).setDepth(3);
     this.add.image(350, 150, 'icon_plant').setOrigin(1, 0.5).setScale(1.2).setDepth(3);
 
@@ -68,26 +73,65 @@ export class ShopScene extends Phaser.Scene {
 
   // ---------- Rak ----------
   refreshShelves() {
-    for (const s of this.shelfSprites) s.destroy();
+    for (const sp of this.shelfSprites) sp.destroy();
     this.shelfSprites = [];
-    const stock = this.engine.stockLots();
-    ITEMS.forEach((it, i) => {
-      const locked = !this.engine.isUnlocked(it.id);
-      const qty = stock.filter((l) => l.itemId === it.id).reduce((s, l) => s + l.qty, 0);
-      const icons = Math.min(4, Math.ceil(qty / 6));
+    const e = this.engine;
+    CATEGORIES.forEach((cat, i) => {
       const cx = shelfX(i);
-      const slots = [[-14, 84], [14, 84], [-14, 108], [14, 108]];
-      for (let k = 0; k < icons; k++) {
-        const img = this.add.image(cx + slots[k][0], slots[k][1], `icon_${it.icon}`).setDepth(2);
-        this.shelfSprites.push(img);
+      const open = e.categoryOpen(cat.id);
+      if (!open) {
+        const cover = this.add.rectangle(cx, 92, 62, 52, 0x1f2937, 0.78).setDepth(3);
+        const t = this.add.text(cx, 92, `Toko\nLv ${cat.needShop}`, { fontFamily: 'monospace', fontSize: '10px', color: '#9ca3af', align: 'center', fontStyle: 'bold' }).setOrigin(0.5).setDepth(4);
+        this.shelfSprites.push(cover, t);
+        return;
       }
-      if (locked || qty === 0) {
-        const t = this.add.text(cx, 92, locked ? 'TERKUNCI' : 'HABIS', {
-          fontFamily: 'monospace', fontSize: '10px', color: locked ? '#6b7280' : '#b91c1c', fontStyle: 'bold',
-        }).setOrigin(0.5).setDepth(3);
+      const rows = itemsOf(cat.id)
+        .map((it) => ({ it, qty: e.totalQty(it.id) }))
+        .filter((r) => r.qty > 0)
+        .sort((a, b) => b.it.tier - a.it.tier)
+        .slice(0, 4);
+      const slots = [[-16, 80], [16, 80], [-16, 106], [16, 106]];
+      rows.forEach((r, k) => {
+        const img = this.add.image(cx + slots[k][0], slots[k][1], `icon_${r.it.id}`).setDepth(2);
+        const qt = this.add.text(cx + slots[k][0], slots[k][1] + 12, String(r.qty), { fontFamily: 'monospace', fontSize: '8px', color: '#fff', stroke: '#000', strokeThickness: 2 }).setOrigin(0.5, 0).setDepth(3);
+        this.shelfSprites.push(img, qt);
+      });
+      if (rows.length === 0) {
+        const t = this.add.text(cx, 92, 'KOSONG', { fontFamily: 'monospace', fontSize: '10px', color: '#b91c1c', fontStyle: 'bold' }).setOrigin(0.5).setDepth(3);
         this.shelfSprites.push(t);
       }
     });
+    this.refreshDecor();
+  }
+
+  // Dekorasi toko ikut berubah sesuai level toko dan bintang.
+  refreshDecor() {
+    const e = this.engine;
+    const lvl = e.state.shopLevel;
+    const g = this.decor;
+    g.clear();
+    const colors = [0x9ca3af, 0x16a34a, 0x2563eb, 0xdc2626, 0xf59e0b];
+    const col = colors[lvl - 1];
+    for (let x = 0; x < W; x += 24) {
+      g.fillStyle((x / 24) % 2 === 0 ? col : 0xffffff, 1);
+      g.fillRect(x, 0, 24, 8);
+    }
+    if (lvl >= 3) {
+      for (const lx of [60, 180, 300]) {
+        g.fillStyle(0xfacc15, 1);
+        g.fillRect(lx - 3, 40, 6, 8);
+        g.fillStyle(0x92400e, 1);
+        g.fillRect(lx - 1, 34, 2, 6);
+      }
+    }
+    if (lvl >= 4) {
+      g.fillStyle(0xb91c1c, 1);
+      g.fillRect(120, 330, 70, 40);
+      g.fillStyle(0xfecaca, 1);
+      g.fillRect(124, 334, 62, 2);
+    }
+    const st = e.state.stars;
+    this.signStars.setText('★'.repeat(st) + '☆'.repeat(5 - st) + `  Toko Lv ${lvl}`);
   }
 
   // ---------- Kendali dari UI ----------
@@ -181,7 +225,7 @@ export class ShopScene extends Phaser.Scene {
 
   _routeToShelf(c) {
     const want = c.data.wants[c.wantIdx];
-    const idx = ITEMS.findIndex((i) => i.id === want.itemId);
+    const idx = catIdx(getItem(want.itemId).cat);
     const sx = shelfX(idx) + (c.data.id.length % 3 - 1) * 4;
     const pts = [];
     if (c.y > AISLE_Y + 4) pts.push({ x: Math.max(c.x, DOOR_X), y: ROAD_Y }, { x: DOOR_X, y: ROAD_Y }, { x: DOOR_X, y: AISLE_Y });
@@ -212,7 +256,7 @@ export class ShopScene extends Phaser.Scene {
     }).setOrigin(0.5, 1).setDepth(9999);
     let icon = null;
     if (itemId) {
-      icon = this.add.image(c.x, c.y - 56, `icon_${getItem(itemId).icon}`).setScale(0.8).setDepth(9999);
+      icon = this.add.image(c.x, c.y - 56, `icon_${itemId}`).setScale(0.8).setDepth(9999);
     }
     return { t, icon };
   }
@@ -336,7 +380,7 @@ export class ShopScene extends Phaser.Scene {
         c.sprite.setFlipX(dx < 0);
       } else if (k === 0 && c.state === 'queued') {
         c.state = 'paying';
-        c.timer = PAY_TIME;
+        c.timer = PAY_TIME * this.engine.mods().payTime;
       }
     });
   }

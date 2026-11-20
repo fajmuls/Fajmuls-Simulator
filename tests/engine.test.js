@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { GameEngine, newState } from '../src/core/engine.js';
 import { auditLedger } from '../src/core/ledger.js';
 import { validateState } from '../src/core/save.js';
-import { ITEMS } from '../src/core/catalog.js';
+import { UPGRADES, ITEMS } from '../src/core/catalog.js';
 
-function runDay(engine) {
+export function runDay(engine) {
   const plan = engine.startDay();
   for (const c of plan) {
     let any = false;
@@ -18,9 +18,7 @@ function runDay(engine) {
   return engine.endDay();
 }
 
-function sumStock(engine) {
-  return Object.values(engine.state.stock).reduce((s, l) => s + l.qty, 0);
-}
+const sumStock = (e) => Object.values(e.state.stock).reduce((s, l) => s + l.qty, 0);
 
 describe('engine: belanja', () => {
   it('membeli stok mengurangi uang tepat sebesar harga grosir', () => {
@@ -34,10 +32,11 @@ describe('engine: belanja', () => {
     expect(e.state.stock['cacing:2'].cost).toBe(unit * 10);
   });
 
-  it('menolak beli bila uang atau kapasitas tidak cukup, tanpa mengubah state', () => {
+  it('menolak beli bila tidak valid, tanpa mengubah state', () => {
     const e = new GameEngine(newState(42));
     const snapshot = JSON.stringify(e.state);
-    expect(() => e.buyStock('koi', 1, 1)).toThrow(); // belum terbuka
+    expect(() => e.buyStock('koi', 1, 1)).toThrow(); // spesies belum dibuka
+    expect(() => e.buyStock('pipit', 1, 1)).toThrow(); // kategori belum dibuka
     expect(() => e.buyStock('cacing', 5, 1)).toThrow(); // kualitas belum tersedia
     expect(() => e.buyStock('cacing', 2, 0)).toThrow();
     expect(() => e.buyStock('cacing', 2, 1.5)).toThrow();
@@ -55,12 +54,22 @@ describe('engine: belanja', () => {
     expect(e.state.ledger.balance).toBe(before - 15000);
   });
 
-  it('kontrak supplier membuka Ikan Koi dan kualitas lebih tinggi', () => {
-    const s = newState(7);
-    const e = new GameEngine(s);
+  it('kontrak supplier menaikkan kualitas maksimum', () => {
+    const e = new GameEngine(newState(7));
+    expect(e.maxQuality()).toBe(3);
     e.buyUpgrade('supplier');
-    expect(e.isUnlocked('koi')).toBe(true);
     expect(e.maxQuality()).toBe(4);
+  });
+
+  it('beli ulang isi ulang barang yang sudah menipis', () => {
+    const e = new GameEngine(newState(3));
+    e.buyStock('cacing', 3, 20);
+    e.state.stock['cacing:3'].qty -= 15; // anggap terjual
+    e.state.stock['cacing:3'].cost = Math.round(e.state.stock['cacing:3'].cost / 4);
+    const log = e.restockLast();
+    expect(log.length).toBe(1);
+    expect(e.totalQty('cacing')).toBe(20);
+    expect(auditLedger(e.state.ledger)).toEqual([]);
   });
 });
 
@@ -71,6 +80,7 @@ describe('engine: hari berjalan', () => {
     e.startDay();
     expect(() => e.buyStock('cacing', 2, 1)).toThrow();
     expect(() => e.setPrice('cacing', 2, 900)).toThrow();
+    expect(() => e.setAllPrices(-10)).toThrow();
   });
 
   it('penjualan: pendapatan masuk ke kas, stok berkurang, modal terbawa', () => {
@@ -80,10 +90,10 @@ describe('engine: hari berjalan', () => {
     const startCash = e.state.ledger.balance;
     const startStock = sumStock(e);
     const summary = runDay(e);
-    const sold = startStock - sumStock(e);
-    expect(summary.soldUnits).toBe(sold);
-    expect(e.state.ledger.balance).toBe(startCash + summary.revenue - Math.min(3000, startCash + summary.revenue));
+    expect(summary.soldUnits).toBe(startStock - sumStock(e));
+    expect(e.state.ledger.balance).toBe(startCash + summary.revenue - summary.rent);
     expect(summary.grossProfit).toBe(summary.revenue - summary.cogs);
+    expect(summary.net).toBe(summary.grossProfit - summary.rent - summary.wages);
     expect(auditLedger(e.state.ledger)).toEqual([]);
     expect(validateState(e.state)).toEqual([]);
   });
@@ -98,11 +108,11 @@ describe('engine: hari berjalan', () => {
     expect(e.state.stock['cacing:3'].qty).toBe(30);
   });
 
-  it('toko tanpa stok tidak menjual apa pun dan reputasi turun/tetap 0 batas bawah', () => {
+  it('toko tanpa stok tidak menjual apa pun dan reputasi tetap di batas bawah', () => {
     const e = new GameEngine(newState(9));
     const s = runDay(e);
     expect(s.revenue).toBe(0);
-    expect(e.state.reputation).toBeGreaterThanOrEqual(0);
+    expect(e.state.reputation).toBeGreaterThanOrEqual(5);
   });
 
   it('pesanan yang belum dibayar dikembalikan ke stok saat hari berakhir', () => {
@@ -115,7 +125,6 @@ describe('engine: hari berjalan', () => {
         const r = e.browse(c, i);
         if (r.ok) reservedQty += r.qty;
       }
-      // sengaja tidak memanggil pay()
     }
     expect(reservedQty).toBeGreaterThan(0);
     const cash = e.state.ledger.balance;
@@ -126,17 +135,14 @@ describe('engine: hari berjalan', () => {
   });
 
   it('sewa yang tak terbayar menjadi tunggakan, saldo tidak pernah negatif', () => {
-    const s = newState(13);
-    s.ledger = { ...s.ledger };
-    const e = new GameEngine(s);
-    // habiskan uang
-    e.buyStock('cacing', 3, 60);
-    while (e.state.ledger.balance > 0 && e.maxAffordable('lele', 3) === 0) break;
-    const bal = e.state.ledger.balance;
-    expect(bal).toBeGreaterThanOrEqual(0);
-    runDay(e);
+    const e = new GameEngine(newState(13));
+    e.state.ledger.opening = 1000;
+    e.state.ledger.balance = 1000;
+    const s = runDay(e);
     expect(e.state.ledger.balance).toBeGreaterThanOrEqual(0);
-    expect(e.state.arrears).toBeGreaterThanOrEqual(0);
+    expect(e.state.arrears).toBeGreaterThan(0);
+    expect(s.rent).toBe(3000);
+    expect(auditLedger(e.state.ledger)).toEqual([]);
   });
 
   it('hari yang sama dengan benih yang sama menghasilkan rencana pelanggan yang sama', () => {
@@ -146,36 +152,62 @@ describe('engine: hari berjalan', () => {
     b.buyStock('cacing', 3, 20);
     expect(a.generatePlan()).toEqual(b.generatePlan());
   });
+
+  it('event harian deterministik dan hari 1 selalu cerah', () => {
+    const a = new GameEngine(newState(5));
+    const b = new GameEngine(newState(5));
+    expect(a.eventOf(1).id).toBe('cerah');
+    for (let d = 1; d < 50; d++) expect(a.eventOf(d).id).toBe(b.eventOf(d).id);
+  });
 });
 
-describe('engine: audit simulasi 120 hari', () => {
-  it('bot yang belanja dan jualan 120 hari tetap lolos audit keuangan', () => {
-    for (const seed of [1, 2, 3, 4, 5]) {
+describe('engine: audit simulasi 200 hari dengan semua sistem', () => {
+  it('bot yang memakai semua fitur tetap lolos audit keuangan', () => {
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
       const e = new GameEngine(newState(seed));
-      for (let d = 0; d < 120; d++) {
-        // bot: beli sedikit untuk setiap barang, upgrade bila uang berlimpah
+      for (let d = 0; d < 200; d++) {
+        const s = e.state;
+        // belanja
         for (const it of e.unlockedItems()) {
           const q = Math.min(3, e.maxQuality());
-          const n = Math.min(8, e.maxAffordable(it.id, q));
-          if (n > 0 && e.state.ledger.balance > 10000) e.buyStock(it.id, q, n);
+          const want = e.totalQty(it.id) < 6 ? 6 : 0;
+          const n = Math.min(want, e.maxAffordable(it.id, q));
+          if (n > 0 && s.ledger.balance > 15000) e.buyStock(it.id, q, n);
         }
-        for (const id of ['rak', 'dekorasi', 'supplier']) {
-          const c = e.upgradeCost(id);
-          if (c !== null && e.state.ledger.balance > c + 20000) { e.buyUpgrade(id); break; }
-        }
+        const tryDo = (fn) => { try { fn(); } catch { /* aturan game menolak, itu wajar */ } };
+        // upgrade, spesies, skill, ramuan, karyawan, bank, investasi, breeding
+        tryDo(() => { if (s.ledger.balance > 150000) e.expandShop(); });
+        for (const u of UPGRADES) tryDo(() => { const c = e.upgradeCost(u.id); if (c !== null && s.ledger.balance > c + 30000) e.buyUpgrade(u.id); });
+        for (const it of ITEMS) tryDo(() => { if (s.ledger.balance > it.unlockCost + 40000) e.unlockSpecies(it.id); });
+        for (let k = 0; k < 3; k++) for (const sk of ['tawar', 'promosi', 'gudang', 'breeder', 'bibit_unggul', 'harga_prima']) tryDo(() => e.learnSkill(sk));
+        tryDo(() => { if (s.ledger.balance > 30000) e.buyPotion('pemikat'); });
+        tryDo(() => e.activatePotion('pemikat'));
+        for (const id of ['kasir', 'pramuniaga', 'penjaga', 'perawat']) tryDo(() => { if (s.ledger.balance > 60000) e.hire(id); });
+        tryDo(() => { if (s.loans.length === 0 && d % 20 === 5) e.takeLoan(20000, 1); });
+        for (const l of s.loans.slice()) tryDo(() => { if (s.ledger.balance > l.remaining + 50000) e.repayLoan(l.id, l.remaining); });
+        tryDo(() => { if (s.ledger.balance > 120000) e.openDeposit(20000, d % 3); });
+        tryDo(() => { if (d % 10 === 0) e.buyShares('satwamart', 5); });
+        tryDo(() => { if (d % 10 === 5) e.sellShares('satwamart', 5); });
+        tryDo(() => { if (s.ledger.balance > 400000) e.buyProperty('kios'); });
+        for (const b of s.breeding.slice()) tryDo(() => e.collectBreeding(b.id));
+        for (const lot of e.stockLots()) { if (lot.qty >= 2) { tryDo(() => e.startBreeding(lot.itemId, lot.quality)); break; } }
+        tryDo(() => e.setAllPrices(d % 2 ? 0 : -10));
         runDay(e);
-        expect(e.state.ledger.balance).toBeGreaterThanOrEqual(0);
-        expect(auditLedger(e.state.ledger)).toEqual([]);
-        for (const lot of Object.values(e.state.stock)) {
+
+        expect(s.ledger.balance).toBeGreaterThanOrEqual(0);
+        expect(auditLedger(s.ledger)).toEqual([]);
+        for (const lot of Object.values(s.stock)) {
           expect(lot.qty).toBeGreaterThanOrEqual(0);
           expect(lot.cost).toBeGreaterThanOrEqual(0);
           if (lot.qty === 0) expect(lot.cost).toBe(0);
         }
         expect(e.usedCapacity()).toBeLessThanOrEqual(e.capacity());
+        expect(e.skillPointsFree()).toBeGreaterThanOrEqual(0);
+        expect(s.arrears).toBeGreaterThanOrEqual(0);
+        for (const l of s.loans) expect(l.remaining).toBeGreaterThan(0);
       }
       expect(validateState(e.state)).toEqual([]);
-      expect(e.state.day).toBe(121);
-      expect(ITEMS.length).toBeGreaterThan(0);
+      expect(e.state.day).toBe(201);
     }
   });
 });

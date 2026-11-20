@@ -5,6 +5,7 @@ import { GameEngine, newState } from './core/engine.js';
 import { SaveManager, serialize, deserialize } from './core/save.js';
 import { ShopScene, W, H } from './game/ShopScene.js';
 import { UI, toast, h } from './ui.js';
+import './screens.js';
 
 async function boot() {
   const saves = new SaveManager();
@@ -53,7 +54,7 @@ async function boot() {
     exportFile() {
       if (!engine.canSave()) return toast('Tutup toko dulu untuk mengekspor', 'err');
       const blob = new Blob([serialize(engine.state)], { type: 'application/json' });
-      const a = h('a', { href: URL.createObjectURL(blob), download: `fajmuls-hari-${engine.state.day}.json` });
+      const a = h('a', { href: URL.createObjectURL(blob), download: `pasar-satwa-hari-${engine.state.day}.json` });
       document.body.append(a);
       a.click();
       a.remove();

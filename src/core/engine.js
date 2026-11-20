@@ -1,35 +1,104 @@
 import {
-  ITEMS, CUSTOMER_TYPES, UPGRADES, QUALITIES,
+  CATEGORIES, ITEMS, CUSTOMER_TYPES, UPGRADES, QUALITIES, SKILLS, POTIONS, STAFF, SHARES, PROPERTIES, EVENTS,
+  SHOP_LEVELS, STAR_THRESH, STAR_POINTS, STAR_PERKS, DEPOSIT_TERMS, DEPOSIT_MIN, DEPOSIT_MAX_ACTIVE,
+  SHARE_MIN_PRICE, SHARE_SELL_FEE, SHARE_HISTORY, PROPERTY_SELL_RATE, LOAN_TERMS, LOAN_MIN, LOAN_STEP,
+  LOAN_MAX_ACTIVE, LOAN_LATE_FEE, BREED_FEE_RATE, BREED_BASE_SLOTS, SKILL_POINT_EVERY_DAYS,
   BASE_CAPACITY, CAPACITY_PER_RAK, BASE_MAX_QUALITY, START_CASH, DAILY_RENT,
-  getItem, getQuality, getUpgrade, lotKey, parseLotKey,
+  getItem, getCategory, getQuality, getUpgrade, getSkill, getPotion, getStaff, getShare, getProperty,
+  lotKey, parseLotKey, starsFor,
 } from './catalog.js';
 import { createLedger, credit, debit, sumByType } from './ledger.js';
 import { mulberry32, hashSeed, pickWeighted } from './rng.js';
 
 export const DAY_LENGTH_SEC = 60; // lama jendela pelanggan datang pada kecepatan 1x
-export const STATE_VERSION = 1;
+export const STATE_VERSION = 2;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-const roundTo = (v, step) => Math.max(step, Math.round(v / step) * step);
+
+export function priceStep(ref) {
+  return ref < 2000 ? 10 : ref < 20000 ? 50 : 100;
+}
+const floorToStep = (v, step) => Math.max(1, Math.floor(v / step) * step);
+
+function initShares(seed) {
+  const out = {};
+  for (const sh of SHARES) {
+    const jitter = 0.9 + mulberry32(hashSeed(seed, 'share0', sh.id))() * 0.2;
+    const price = Math.max(SHARE_MIN_PRICE, Math.round(sh.start * jitter));
+    out[sh.id] = { price, hist: [price] };
+  }
+  return out;
+}
 
 export function newState(seed = Date.now() % 2147483647) {
   const upgrades = {};
   for (const u of UPGRADES) upgrades[u.id] = 0;
+  const sd = Math.abs(Math.floor(seed)) || 1;
   return {
     v: STATE_VERSION,
-    seed: Math.abs(Math.floor(seed)) || 1,
+    seed: sd,
     day: 1,
     phase: 'idle',
     ledger: createLedger(START_CASH),
-    stock: {}, // "itemId:q" -> { qty, cost }  (cost = total modal stok itu, Rupiah bulat)
+    stock: {}, // "itemId:q" -> { qty, cost }  (cost = total modal stok itu)
     prices: {}, // "itemId:q" -> harga jual per unit
+    species: {}, // itemId -> true (spesies yang sudah dibuka dengan uang)
+    shopLevel: 1,
     upgrades,
+    skills: {},
+    potions: {},
+    buffs: {},
+    staff: {},
+    restock: {}, // itemId -> { target, q }
+    autoPrice: { on: false, pct: 0 },
+    lastBuy: {}, // itemId -> { q, n }
+    breeding: [],
+    deposits: [],
+    shares: {}, // shareId -> { qty, cost }
+    sharePrices: initShares(sd),
+    properties: {},
+    loans: [],
+    nextId: 1,
     reputation: 10,
-    arrears: 0, // tunggakan sewa
+    stars: 1,
+    arrears: 0, // tunggakan sewa dan gaji
     stats: { revenue: 0, customers: 0, bestDay: 0 },
-    history: [], // ringkasan harian terakhir
+    history: [],
   };
 }
+
+// Mengubah simpanan lama ke bentuk terbaru. Tidak mengubah objek masukan.
+export function migrate(input) {
+  if (!input || typeof input !== 'object') return input;
+  if (input.v === STATE_VERSION) return input;
+  if (input.v !== 1) return input;
+  const s = structuredClone(input);
+  const base = newState(s.seed);
+  s.v = STATE_VERSION;
+  const upgrades = { ...base.upgrades };
+  for (const [k, v] of Object.entries(s.upgrades || {})) if (k in upgrades) upgrades[k] = v;
+  s.upgrades = upgrades;
+  s.shopLevel = 1;
+  s.species = {};
+  // Spesies yang pernah dimiliki (atau sudah terbuka di versi 1) tetap terbuka, termasuk tier di bawahnya.
+  const maxTier = {};
+  const mark = (itemId) => {
+    const it = ITEMS.find((i) => i.id === itemId);
+    if (it) maxTier[it.cat] = Math.max(maxTier[it.cat] || 0, it.tier);
+  };
+  for (const key of Object.keys(s.stock || {})) mark(parseLotKey(key).itemId);
+  for (const key of Object.keys(s.prices || {})) mark(parseLotKey(key).itemId);
+  if (upgrades.supplier >= 1) mark('koi');
+  for (const it of ITEMS) if (it.unlockCost > 0 && it.tier <= (maxTier[it.cat] || 0)) s.species[it.id] = true;
+  Object.assign(s, {
+    skills: {}, potions: {}, buffs: {}, staff: {}, restock: {}, autoPrice: { on: false, pct: 0 }, lastBuy: {},
+    breeding: [], deposits: [], shares: {}, sharePrices: base.sharePrices, properties: {}, loans: [], nextId: 1,
+  });
+  s.stars = starsFor(s.reputation);
+  return s;
+}
+
+const catIndex = (id) => CATEGORIES.findIndex((c) => c.id === id);
 
 export class GameEngine {
   constructor(state = newState()) {
@@ -37,6 +106,7 @@ export class GameEngine {
     this.reserved = new Map(); // customerId -> [{key, qty, cost, revenue}]
     this.plan = [];
     this.today = null;
+    this.lastRestock = [];
     this._marketCache = new Map();
   }
 
@@ -46,7 +116,73 @@ export class GameEngine {
     this.reserved.clear();
     this.plan = [];
     this.today = null;
+    this.lastRestock = [];
     this._marketCache.clear();
+  }
+
+  _requireIdle() {
+    if (this.state.phase !== 'idle') throw new Error('Tutup toko dulu untuk melakukan ini');
+  }
+
+  _requireStars(n, what) {
+    if (this.state.stars < n) throw new Error(`${what} terbuka di bintang ${n}`);
+  }
+
+  _id() {
+    return this.state.nextId++;
+  }
+
+  // ---------- Event, bintang, pengubah ----------
+  eventOf(day = this.state.day) {
+    if (day <= 1) return EVENTS[0];
+    const rng = mulberry32(hashSeed(this.state.seed, 'event', day));
+    const pick = pickWeighted(rng, EVENTS.map((e) => ({ ...e, weight: e.weight })));
+    return EVENTS.find((e) => e.id === pick.id);
+  }
+
+  perks() {
+    return STAR_PERKS[this.state.stars - 1];
+  }
+
+  starProgress() {
+    const s = this.state;
+    if (s.stars >= STAR_THRESH.length) return { stars: s.stars, rep: s.reputation, from: STAR_THRESH[s.stars - 1], to: null, pct: 100 };
+    const from = STAR_THRESH[s.stars - 1];
+    const to = STAR_THRESH[s.stars];
+    return { stars: s.stars, rep: s.reputation, from, to, pct: clamp(Math.round(((s.reputation - from) / (to - from)) * 100), 0, 100) };
+  }
+
+  mods() {
+    const s = this.state;
+    const P = this.perks();
+    const ev = this.eventOf(s.day);
+    const sk = (id) => s.skills[id] || 0;
+    const up = (id) => s.upgrades[id] || 0;
+    const bf = (id) => (s.buffs[id] || 0) > 0;
+    const hasStaff = (id) => !!s.staff[id];
+    const count = P.count * (1 + 0.12 * up('dekorasi')) * (1 + 0.08 * sk('promosi')) * (bf('pemikat') ? 1.3 : 1) * (hasStaff('pramuniaga') ? 1.1 : 1) * ev.count;
+    const disc = Math.min(0.5, P.disc + 0.03 * sk('tawar') + 0.03 * up('member') + (bf('borong') ? 0.12 : 0));
+    const wtp = P.wtp + 0.04 * sk('harga_prima') + (bf('hartawan') ? 0.15 : 0) + ev.wtp;
+    const vip = P.vip * (1 + 0.2 * sk('vipmagnet')) * (bf('vip') ? 2 : 1) * ev.vip;
+    const rentCut = Math.min(0.6, P.rent + 0.08 * sk('juragan'));
+    const rentBase = Math.round(DAILY_RENT * (1 + 0.5 * (s.shopLevel - 1)));
+    const rent = Math.max(0, Math.round(rentBase * (1 - rentCut)));
+    const repGain = 1 + 0.1 * sk('ramah') + (bf('sahabat') ? 0.5 : 0);
+    const repLoss = Math.max(0.1, 1 - 0.1 * sk('ramah') - (bf('sahabat') ? 0.5 : 0));
+    const payTime = Math.max(0.15, 1 - 0.15 * up('kasir_modern') - 0.12 * sk('kasir_cepat') - (hasStaff('kasir') ? 0.45 : 0));
+    return { count, disc, wtp, vip, rent, repGain, repLoss, payTime, event: ev };
+  }
+
+  wages() {
+    return STAFF.reduce((sum, st) => sum + (this.state.staff[st.id] ? st.wage : 0), 0);
+  }
+
+  loanDue() {
+    return this.state.loans.reduce((sum, l) => sum + (l.daysLeft > 0 ? Math.min(l.perDay, l.remaining) : l.remaining), 0);
+  }
+
+  dailyObligations() {
+    return this.mods().rent + this.wages() + this.loanDue();
   }
 
   // ---------- Pasar ----------
@@ -54,17 +190,21 @@ export class GameEngine {
     if (this._marketCache.has(day)) return this._marketCache.get(day);
     const rng = mulberry32(hashSeed(this.state.seed, 'market', day));
     const f = {};
-    for (const it of ITEMS) {
-      f[it.id] = { wf: 0.88 + rng() * 0.24, rf: 0.88 + rng() * 0.24 };
-    }
+    for (const it of ITEMS) f[it.id] = { wf: 0.88 + rng() * 0.24, rf: 0.88 + rng() * 0.24 };
     this._marketCache.set(day, f);
     return f;
   }
 
-  wholesalePrice(itemId, quality, day = this.state.day) {
+  // Harga grosir sebelum diskon pemain
+  wholesaleBase(itemId, quality, day = this.state.day) {
     const it = getItem(itemId);
     const q = getQuality(quality);
-    return Math.max(1, Math.round(it.wholesale * q.mult * this._factors(day)[itemId].wf));
+    return Math.max(1, Math.round(it.wholesale * q.mult * this._factors(day)[itemId].wf * this.eventOf(day).wholesale));
+  }
+
+  // Harga grosir yang benar-benar dibayar (sudah termasuk diskon)
+  wholesalePrice(itemId, quality, day = this.state.day) {
+    return Math.max(1, Math.round(this.wholesaleBase(itemId, quality, day) * (1 - this.mods().disc)));
   }
 
   retailRef(itemId, quality, day = this.state.day) {
@@ -73,19 +213,27 @@ export class GameEngine {
     return Math.max(1, Math.round(it.retail * q.mult * this._factors(day)[itemId].rf));
   }
 
-  suggestedPrice(itemId, quality) {
-    // dibulatkan ke bawah ke kelipatan 50 agar harga awal masih terjangkau pembeli biasa
-    return Math.max(50, Math.floor(this.retailRef(itemId, quality) / 50) * 50);
+  // Harga pasar dengan selisih persen (mis. -10). Dibulatkan ke bawah ke kelipatan yang rapi.
+  marketPrice(itemId, quality, pct = 0) {
+    const ref = this.retailRef(itemId, quality);
+    return floorToStep(ref * (1 + pct / 100), priceStep(ref));
   }
 
-  // ---------- Kapasitas, kunci, upgrade ----------
+  suggestedPrice(itemId, quality) {
+    return this.marketPrice(itemId, quality, 0);
+  }
+
+  // ---------- Kapasitas, kunci, spesies ----------
   capacity() {
-    return BASE_CAPACITY + this.state.upgrades.rak * CAPACITY_PER_RAK;
+    const s = this.state;
+    const shop = SHOP_LEVELS.slice(0, s.shopLevel).reduce((sum, l) => sum + l.capacity, 0);
+    return BASE_CAPACITY + shop + s.upgrades.rak * CAPACITY_PER_RAK + 10 * (s.skills.gudang || 0);
   }
 
   usedCapacity() {
     let n = 0;
     for (const lot of Object.values(this.state.stock)) n += lot.qty;
+    n += this.state.breeding.length * 2;
     return n;
   }
 
@@ -93,43 +241,192 @@ export class GameEngine {
     return Math.min(QUALITIES.length, BASE_MAX_QUALITY + this.state.upgrades.supplier);
   }
 
+  categoryOpen(catId) {
+    return this.state.shopLevel >= getCategory(catId).needShop;
+  }
+
   isUnlocked(itemId) {
-    return this.state.upgrades.supplier >= getItem(itemId).needSupplier;
+    const it = getItem(itemId);
+    if (!this.categoryOpen(it.cat)) return false;
+    return it.unlockCost === 0 || !!this.state.species[itemId];
   }
 
   unlockedItems() {
     return ITEMS.filter((i) => this.isUnlocked(i.id));
   }
 
+  // Status pembukaan spesies untuk daftar hewan
+  speciesStatus(itemId) {
+    const it = getItem(itemId);
+    if (!this.categoryOpen(it.cat)) return { state: 'kategori', needShop: getCategory(it.cat).needShop };
+    if (this.isUnlocked(itemId)) return { state: 'terbuka' };
+    const prev = ITEMS.find((i) => i.cat === it.cat && i.tier === it.tier - 1);
+    if (prev && !this.isUnlocked(prev.id)) return { state: 'urut', prev: prev.id };
+    return { state: 'bisa', cost: it.unlockCost };
+  }
+
+  unlockSpecies(itemId) {
+    this._requireIdle();
+    const st = this.speciesStatus(itemId);
+    if (st.state === 'terbuka') throw new Error('Spesies sudah terbuka');
+    if (st.state === 'kategori') throw new Error('Perluas toko dulu untuk membuka kategori ini');
+    if (st.state === 'urut') throw new Error('Buka spesies sebelumnya dulu');
+    const it = getItem(itemId);
+    debit(this.state.ledger, this.state.day, 'species', it.unlockCost, `Kontrak spesies ${it.name}`);
+    this.state.species[itemId] = true;
+    return it.unlockCost;
+  }
+
+  // ---------- Level toko dan upgrade ----------
+  nextShopLevel() {
+    const next = SHOP_LEVELS[this.state.shopLevel];
+    return next || null;
+  }
+
+  expandShop() {
+    this._requireIdle();
+    const next = this.nextShopLevel();
+    if (!next) throw new Error('Toko sudah level maksimum');
+    if (this.state.stars < next.needStars) throw new Error(`Butuh bintang ${next.needStars} untuk memperluas toko`);
+    debit(this.state.ledger, this.state.day, 'expand', next.cost, `Perluas toko jadi ${next.name}`);
+    this.state.shopLevel = next.level;
+    return next.cost;
+  }
+
+  upgradeAvailable(id) {
+    const u = getUpgrade(id);
+    return !u.needCat || this.categoryOpen(u.needCat);
+  }
+
   upgradeCost(id) {
     const u = getUpgrade(id);
-    const lvl = this.state.upgrades[id];
+    const lvl = this.state.upgrades[id] || 0;
     return lvl >= u.costs.length ? null : u.costs[lvl];
   }
 
   buyUpgrade(id) {
     this._requireIdle();
+    if (!this.upgradeAvailable(id)) throw new Error('Buka kategori terkait dulu');
     const cost = this.upgradeCost(id);
     if (cost === null) throw new Error('Upgrade sudah level maksimum');
     debit(this.state.ledger, this.state.day, 'upgrade', cost, `Upgrade ${getUpgrade(id).name}`);
-    this.state.upgrades[id] += 1;
+    this.state.upgrades[id] = (this.state.upgrades[id] || 0) + 1;
     return cost;
   }
 
-  _requireIdle() {
-    if (this.state.phase !== 'idle') throw new Error('Tutup toko dulu untuk melakukan ini');
+  // ---------- Skill ----------
+  skillPointsTotal() {
+    const s = this.state;
+    return STAR_POINTS[s.stars - 1] + (s.shopLevel - 1) + Math.floor((s.day - 1) / SKILL_POINT_EVERY_DAYS);
   }
 
-  // ---------- Belanja & harga ----------
-  buyStock(itemId, quality, qty) {
+  skillPointsSpent() {
+    return Object.values(this.state.skills).reduce((a, b) => a + b, 0);
+  }
+
+  skillPointsFree() {
+    return this.skillPointsTotal() - this.skillPointsSpent();
+  }
+
+  skillRank(id) {
+    return this.state.skills[id] || 0;
+  }
+
+  canLearn(id) {
+    const sk = getSkill(id);
+    if (this.skillRank(id) >= sk.max) return 'Rank maksimum';
+    if (sk.req && this.skillRank(sk.req) < 1) return `Butuh ${getSkill(sk.req).name}`;
+    if (this.skillPointsFree() < 1) return 'Poin skill habis';
+    return null;
+  }
+
+  learnSkill(id) {
+    const why = this.canLearn(id);
+    if (why) throw new Error(why);
+    this.state.skills[id] = this.skillRank(id) + 1;
+  }
+
+  resetSkills() {
     this._requireIdle();
+    // Melepas breeding yang bergantung pada skill akan merusak data, jadi tolak saat kandang terisi.
+    if (this.state.breeding.length) throw new Error('Selesaikan breeding dulu sebelum reset skill');
+    this.state.skills = {};
+  }
+
+  // ---------- Ramuan ----------
+  buyPotion(id, qty = 1) {
+    this._requireIdle();
+    this._requireStars(2, 'Ramuan');
     if (!Number.isInteger(qty) || qty < 1) throw new Error('Jumlah harus bilangan bulat minimal 1');
-    if (!this.isUnlocked(itemId)) throw new Error('Barang belum terbuka');
-    if (quality < 1 || quality > this.maxQuality()) throw new Error('Kualitas belum tersedia di grosir');
-    if (this.usedCapacity() + qty > this.capacity()) throw new Error('Kapasitas toko tidak cukup');
+    const p = getPotion(id);
+    debit(this.state.ledger, this.state.day, 'potion', p.price * qty, `Beli ${qty} ${p.name}`);
+    this.state.potions[id] = (this.state.potions[id] || 0) + qty;
+  }
+
+  activatePotion(id) {
+    this._requireIdle();
+    const p = getPotion(id);
+    if ((this.state.potions[id] || 0) < 1) throw new Error('Ramuan habis');
+    if ((this.state.buffs[id] || 0) > 0) throw new Error('Ramuan ini masih aktif');
+    this.state.potions[id] -= 1;
+    this.state.buffs[id] = p.days;
+  }
+
+  // ---------- Karyawan ----------
+  hire(id) {
+    this._requireIdle();
+    const st = getStaff(id);
+    this._requireStars(st.needStars, st.name);
+    if (this.state.staff[id]) throw new Error('Sudah dipekerjakan');
+    this.state.staff[id] = true;
+  }
+
+  fire(id) {
+    this._requireIdle();
+    getStaff(id);
+    if (!this.state.staff[id]) throw new Error('Karyawan tidak ada');
+    if (id === 'perawat' && this.state.breeding.length) throw new Error('Selesaikan breeding dulu');
+    delete this.state.staff[id];
+  }
+
+  setRestock(itemId, target, quality) {
+    getItem(itemId);
+    if (!Number.isInteger(target) || target < 0 || target > 500) throw new Error('Target stok tidak valid');
+    if (!Number.isInteger(quality) || quality < 1 || quality > QUALITIES.length) throw new Error('Kualitas tidak valid');
+    if (target === 0) delete this.state.restock[itemId];
+    else this.state.restock[itemId] = { target, q: quality };
+  }
+
+  totalQty(itemId) {
+    let n = 0;
+    for (const [key, lot] of Object.entries(this.state.stock)) if (parseLotKey(key).itemId === itemId) n += lot.qty;
+    return n;
+  }
+
+  // Penjaga Stok: isi ulang barang yang tersisa kurang dari separuh target.
+  runAutoRestock() {
+    const log = [];
+    if (!this.state.staff.penjaga) return log;
+    const reserve = this.dailyObligations();
+    for (const [itemId, rule] of Object.entries(this.state.restock)) {
+      if (!rule || rule.target <= 0 || !this.isUnlocked(itemId)) continue;
+      const have = this.totalQty(itemId);
+      if (have >= Math.ceil(rule.target * 0.5)) continue;
+      const q = Math.min(rule.q, this.maxQuality());
+      const unit = this.wholesalePrice(itemId, q);
+      const n = Math.min(rule.target - have, this.capacity() - this.usedCapacity(), Math.floor((this.state.ledger.balance - reserve) / unit));
+      if (n < 1) continue;
+      const cost = this._buy(itemId, q, n, 'Restok otomatis');
+      log.push({ itemId, q, n, cost });
+    }
+    return log;
+  }
+
+  // ---------- Belanja ----------
+  _buy(itemId, quality, qty, label = 'Beli') {
     const unit = this.wholesalePrice(itemId, quality);
     const total = unit * qty;
-    debit(this.state.ledger, this.state.day, 'buy_stock', total, `Beli ${qty} ${getItem(itemId).name} (${getQuality(quality).name})`);
+    debit(this.state.ledger, this.state.day, 'buy_stock', total, `${label} ${qty} ${getItem(itemId).name} (${getQuality(quality).name})`);
     const key = lotKey(itemId, quality);
     const lot = this.state.stock[key] || { qty: 0, cost: 0 };
     lot.qty += qty;
@@ -139,6 +436,34 @@ export class GameEngine {
     return total;
   }
 
+  buyStock(itemId, quality, qty) {
+    this._requireIdle();
+    if (!Number.isInteger(qty) || qty < 1) throw new Error('Jumlah harus bilangan bulat minimal 1');
+    if (!this.isUnlocked(itemId)) throw new Error('Barang belum terbuka');
+    if (!Number.isInteger(quality) || quality < 1 || quality > this.maxQuality()) throw new Error('Kualitas belum tersedia di grosir');
+    if (this.usedCapacity() + qty > this.capacity()) throw new Error('Kapasitas toko tidak cukup');
+    const total = this._buy(itemId, quality, qty);
+    this.state.lastBuy[itemId] = { q: quality, n: Math.max(qty, this.state.lastBuy[itemId]?.n || 0) };
+    return total;
+  }
+
+  // Beli ulang barang yang stoknya sudah kurang dari jumlah pembelian terakhir.
+  restockLast() {
+    this._requireIdle();
+    const log = [];
+    for (const [itemId, last] of Object.entries(this.state.lastBuy)) {
+      if (!this.isUnlocked(itemId)) continue;
+      const need = last.n - this.totalQty(itemId);
+      if (need < 1) continue;
+      const q = Math.min(last.q, this.maxQuality());
+      const n = Math.min(need, this.maxAffordable(itemId, q));
+      if (n < 1) continue;
+      const cost = this._buy(itemId, q, n, 'Isi ulang');
+      log.push({ itemId, q, n, cost });
+    }
+    return log;
+  }
+
   maxAffordable(itemId, quality) {
     const unit = this.wholesalePrice(itemId, quality);
     const byMoney = Math.floor(this.state.ledger.balance / unit);
@@ -146,6 +471,7 @@ export class GameEngine {
     return Math.max(0, Math.min(byMoney, bySpace));
   }
 
+  // ---------- Harga jual ----------
   setPrice(itemId, quality, price) {
     this._requireIdle();
     if (!Number.isInteger(price) || price < 1) throw new Error('Harga harus bilangan bulat minimal 1');
@@ -158,10 +484,243 @@ export class GameEngine {
     return this.state.prices[lotKey(itemId, quality)] ?? this.suggestedPrice(itemId, quality);
   }
 
+  // Semua stok dihargai pasar +pct persen (pct boleh negatif). Mengembalikan jumlah lot yang diubah.
+  setAllPrices(pct) {
+    this._requireIdle();
+    if (!Number.isFinite(pct) || pct < -90 || pct > 400) throw new Error('Persentase harga tidak valid');
+    let n = 0;
+    for (const [key, lot] of Object.entries(this.state.stock)) {
+      if (lot.qty <= 0) continue;
+      const { itemId, quality } = parseLotKey(key);
+      this.state.prices[key] = this.marketPrice(itemId, quality, pct);
+      n += 1;
+    }
+    return n;
+  }
+
+  setAutoPrice(on, pct = 0) {
+    this._requireIdle();
+    if (!Number.isFinite(pct) || pct < -90 || pct > 400) throw new Error('Persentase harga tidak valid');
+    this.state.autoPrice = { on: !!on, pct };
+    if (on) this.setAllPrices(pct);
+  }
+
   stockLots() {
     return Object.entries(this.state.stock)
       .filter(([, l]) => l.qty > 0)
       .map(([key, l]) => ({ key, ...parseLotKey(key), qty: l.qty, cost: l.cost }));
+  }
+
+  lowStock(threshold = 3) {
+    const out = [];
+    for (const it of this.unlockedItems()) {
+      const stocked = Object.keys(this.state.prices).some((k) => parseLotKey(k).itemId === it.id) || this.state.lastBuy[it.id];
+      if (!stocked) continue;
+      const q = this.totalQty(it.id);
+      if (q <= threshold) out.push({ itemId: it.id, qty: q });
+    }
+    return out;
+  }
+
+  // ---------- Breeding ----------
+  breedSlots() {
+    const s = this.state;
+    if (!(s.skills.breeder > 0)) return 0;
+    return BREED_BASE_SLOTS + (s.skills.kandang_besar || 0);
+  }
+
+  startBreeding(itemId, quality) {
+    this._requireIdle();
+    const s = this.state;
+    if (!(s.skills.breeder > 0)) throw new Error('Pelajari skill Pengembang Biak dulu');
+    if (s.breeding.length >= this.breedSlots()) throw new Error('Semua kandang breeding terpakai');
+    const it = getItem(itemId);
+    if (!getCategory(it.cat).animal) throw new Error('Hanya hewan yang bisa dibiakkan');
+    const key = lotKey(itemId, quality);
+    const lot = s.stock[key];
+    if (!lot || lot.qty < 2) throw new Error('Butuh minimal 2 ekor dengan kualitas yang sama di stok');
+    const fee = Math.max(1, Math.round(this.wholesalePrice(itemId, quality) * 2 * BREED_FEE_RATE));
+    const pairCost = lot.qty === 2 ? lot.cost : Math.round((lot.cost * 2) / lot.qty);
+    debit(s.ledger, s.day, 'breeding', fee, `Biaya breeding ${it.name} (${getQuality(quality).name})`);
+    lot.qty -= 2;
+    lot.cost -= pairCost;
+    if (lot.qty === 0) lot.cost = 0;
+    const id = this._id();
+    const rng = mulberry32(hashSeed(s.seed, 'breed', id));
+    const perawat = !!s.staff.perawat;
+    const bibit = (s.buffs.bibit || 0) > 0;
+    const duration = Math.max(1, 2 + it.tier - (perawat ? 1 : 0));
+    const litter = 1 + (rng() < 0.5 ? 1 : 0) + (it.tier <= 2 ? 1 : 0) + (bibit ? 1 : 0);
+    const upChance = clamp(0.1 + 0.1 * (s.skills.bibit_unggul || 0) + (bibit ? 0.2 : 0) + (perawat ? 0.1 : 0), 0, 0.8);
+    const offspring = [];
+    for (let i = 0; i < litter; i++) offspring.push(Math.min(QUALITIES.length, quality + (rng() < upChance ? 1 : 0)));
+    s.breeding.push({ id, itemId, quality, pairCost, fee, ready: s.day + duration, offspring });
+    return { id, ready: s.day + duration, litter };
+  }
+
+  collectBreeding(id) {
+    this._requireIdle();
+    const s = this.state;
+    const idx = s.breeding.findIndex((b) => b.id === id);
+    if (idx < 0) throw new Error('Breeding tidak ditemukan');
+    const b = s.breeding[idx];
+    if (s.day < b.ready) throw new Error('Belum waktunya diambil');
+    if (this.usedCapacity() + b.offspring.length > this.capacity()) throw new Error('Kapasitas toko tidak cukup untuk anakan');
+    const pk = lotKey(b.itemId, b.quality);
+    const parents = s.stock[pk] || { qty: 0, cost: 0 };
+    parents.qty += 2;
+    parents.cost += b.pairCost;
+    s.stock[pk] = parents;
+    if (!s.prices[pk]) s.prices[pk] = this.suggestedPrice(b.itemId, b.quality);
+    const n = b.offspring.length;
+    const share = Math.floor(b.fee / n);
+    const rem = b.fee - share * n;
+    b.offspring.forEach((q, i) => {
+      const key = lotKey(b.itemId, q);
+      const lot = s.stock[key] || { qty: 0, cost: 0 };
+      lot.qty += 1;
+      lot.cost += share + (i === 0 ? rem : 0);
+      s.stock[key] = lot;
+      if (!s.prices[key]) s.prices[key] = this.suggestedPrice(b.itemId, q);
+    });
+    s.breeding.splice(idx, 1);
+    return b.offspring.slice();
+  }
+
+  // ---------- Investasi ----------
+  openDeposit(amount, termIdx) {
+    this._requireIdle();
+    this._requireStars(3, 'Investasi');
+    const s = this.state;
+    const term = DEPOSIT_TERMS[termIdx];
+    if (!term) throw new Error('Tenor tidak valid');
+    if (!Number.isInteger(amount) || amount < DEPOSIT_MIN) throw new Error(`Minimal deposito Rp ${DEPOSIT_MIN.toLocaleString('id-ID')}`);
+    if (s.deposits.length >= DEPOSIT_MAX_ACTIVE) throw new Error('Terlalu banyak deposito aktif');
+    debit(s.ledger, s.day, 'invest', amount, `Deposito ${term.days} hari`);
+    s.deposits.push({ id: this._id(), principal: amount, interest: Math.floor(amount * term.rate), matureDay: s.day + term.days - 1 });
+  }
+
+  withdrawDeposit(id) {
+    this._requireIdle();
+    const s = this.state;
+    const idx = s.deposits.findIndex((d) => d.id === id);
+    if (idx < 0) throw new Error('Deposito tidak ditemukan');
+    const d = s.deposits[idx];
+    credit(s.ledger, s.day, 'invest_return', d.principal, 'Deposito dicairkan lebih awal (tanpa bunga)');
+    s.deposits.splice(idx, 1);
+  }
+
+  sharePrice(id) {
+    return this.state.sharePrices[id].price;
+  }
+
+  buyShares(id, qty) {
+    this._requireIdle();
+    this._requireStars(3, 'Investasi');
+    getShare(id);
+    if (!Number.isInteger(qty) || qty < 1) throw new Error('Jumlah lembar harus bilangan bulat minimal 1');
+    const total = this.sharePrice(id) * qty;
+    debit(this.state.ledger, this.state.day, 'stock_buy', total, `Beli ${qty} lembar ${getShare(id).name}`);
+    const h = this.state.shares[id] || { qty: 0, cost: 0 };
+    h.qty += qty;
+    h.cost += total;
+    this.state.shares[id] = h;
+    return total;
+  }
+
+  sellShares(id, qty) {
+    this._requireIdle();
+    getShare(id);
+    const h = this.state.shares[id];
+    if (!Number.isInteger(qty) || qty < 1) throw new Error('Jumlah lembar harus bilangan bulat minimal 1');
+    if (!h || h.qty < qty) throw new Error('Lembar saham tidak cukup');
+    const gross = this.sharePrice(id) * qty;
+    const fee = Math.floor(gross * SHARE_SELL_FEE);
+    const net = gross - fee;
+    credit(this.state.ledger, this.state.day, 'stock_sell', net, `Jual ${qty} lembar ${getShare(id).name} (biaya ${fee})`);
+    const costOut = qty === h.qty ? h.cost : Math.round((h.cost * qty) / h.qty);
+    h.qty -= qty;
+    h.cost -= costOut;
+    if (h.qty === 0) {
+      h.cost = 0;
+      delete this.state.shares[id];
+    }
+    return net;
+  }
+
+  buyProperty(id) {
+    this._requireIdle();
+    this._requireStars(3, 'Investasi');
+    const p = getProperty(id);
+    const have = this.state.properties[id] || 0;
+    if (have >= p.max) throw new Error('Sudah mencapai batas kepemilikan');
+    debit(this.state.ledger, this.state.day, 'property', p.cost, `Beli ${p.name}`);
+    this.state.properties[id] = have + 1;
+  }
+
+  sellProperty(id) {
+    this._requireIdle();
+    const p = getProperty(id);
+    if (!(this.state.properties[id] > 0)) throw new Error('Properti tidak dimiliki');
+    credit(this.state.ledger, this.state.day, 'property_sale', Math.floor(p.cost * PROPERTY_SELL_RATE), `Jual ${p.name}`);
+    this.state.properties[id] -= 1;
+    if (this.state.properties[id] === 0) delete this.state.properties[id];
+  }
+
+  propertyIncome() {
+    return PROPERTIES.reduce((sum, p) => sum + (this.state.properties[p.id] || 0) * p.income, 0);
+  }
+
+  netWorth() {
+    const s = this.state;
+    let w = s.ledger.balance;
+    for (const lot of Object.values(s.stock)) w += lot.cost;
+    for (const b of s.breeding) w += b.pairCost + b.fee;
+    for (const d of s.deposits) w += d.principal;
+    for (const [id, h] of Object.entries(s.shares)) w += s.sharePrices[id].price * h.qty;
+    for (const [id, n] of Object.entries(s.properties)) w += getProperty(id).cost * n;
+    for (const l of s.loans) w -= l.remaining;
+    return w - s.arrears;
+  }
+
+  // ---------- Bank ----------
+  loanOutstanding() {
+    return this.state.loans.reduce((sum, l) => sum + l.remaining, 0);
+  }
+
+  loanLimit() {
+    return 30000 * this.state.stars + 15000 * (this.state.shopLevel - 1);
+  }
+
+  loanAvailable() {
+    return Math.max(0, this.loanLimit() - this.loanOutstanding());
+  }
+
+  takeLoan(amount, termIdx) {
+    this._requireIdle();
+    this._requireStars(2, 'Bank');
+    const s = this.state;
+    const term = LOAN_TERMS[termIdx];
+    if (!term) throw new Error('Tenor tidak valid');
+    if (!Number.isInteger(amount) || amount < LOAN_MIN || amount % LOAN_STEP !== 0) throw new Error(`Pinjaman minimal Rp ${LOAN_MIN.toLocaleString('id-ID')} dan kelipatan Rp ${LOAN_STEP.toLocaleString('id-ID')}`);
+    if (s.loans.length >= LOAN_MAX_ACTIVE) throw new Error('Terlalu banyak pinjaman aktif');
+    const total = amount + Math.floor(amount * term.rate);
+    if (amount > this.loanAvailable()) throw new Error('Melebihi batas pinjaman. Naikkan bintang atau perluas toko');
+    credit(s.ledger, s.day, 'loan', amount, `Pinjaman bank ${term.days} hari`);
+    s.loans.push({ id: this._id(), principal: amount, remaining: total, perDay: Math.ceil(total / term.days), daysLeft: term.days, late: 0 });
+  }
+
+  repayLoan(id, amount) {
+    this._requireIdle();
+    const s = this.state;
+    const idx = s.loans.findIndex((l) => l.id === id);
+    if (idx < 0) throw new Error('Pinjaman tidak ditemukan');
+    const l = s.loans[idx];
+    if (!Number.isInteger(amount) || amount < 1) throw new Error('Jumlah bayar harus bilangan bulat minimal 1');
+    if (amount > l.remaining) throw new Error('Melebihi sisa pinjaman');
+    debit(s.ledger, s.day, 'loan_pay', amount, 'Bayar pinjaman bank');
+    l.remaining -= amount;
+    if (l.remaining === 0) s.loans.splice(idx, 1);
   }
 
   // ---------- Hari berjalan ----------
@@ -181,31 +740,34 @@ export class GameEngine {
   customerCount() {
     const s = this.state;
     const base = 8 + s.reputation * 0.15 + Math.min(s.day, 60) * 0.2;
-    const deco = 1 + 0.12 * s.upgrades.dekorasi;
-    return clamp(Math.round(base * deco * this.priceAttract()), 3, 40);
+    return clamp(Math.round(base * this.mods().count * this.priceAttract()), 3, 50);
+  }
+
+  _qtyCap(item) {
+    if (item.cat === 'perlengkapan') return 3;
+    return item.tier <= 2 ? 2 : 1;
   }
 
   generatePlan() {
     const s = this.state;
+    const m = this.mods();
     const rng = mulberry32(hashSeed(s.seed, 'plan', s.day));
     const n = this.customerCount();
-    const items = this.unlockedItems().map((i) => ({ id: i.id, weight: i.demand }));
+    const items = this.unlockedItems().map((i) => ({ id: i.id, weight: i.demand * (this.totalQty(i.id) > 0 ? 3 : 1) }));
+    const types = CUSTOMER_TYPES.map((t) => ({ ...t, weight: t.weight * (t.id === 'vip' ? m.vip : 1) }));
     const times = [];
     for (let i = 0; i < n; i++) times.push(rng() * DAY_LENGTH_SEC);
     times.sort((a, b) => a - b);
     return times.map((t, i) => {
-      const type = pickWeighted(rng, CUSTOMER_TYPES);
+      const type = pickWeighted(rng, types);
       const wantCount = rng() < 0.35 ? 2 : 1;
       const pool = items.slice();
       const wants = [];
       for (let w = 0; w < wantCount && pool.length; w++) {
         const pick = pickWeighted(rng, pool);
         pool.splice(pool.findIndex((p) => p.id === pick.id), 1);
-        wants.push({
-          itemId: pick.id,
-          qty: 1 + Math.floor(rng() * type.maxQty),
-          noise: 0.95 + rng() * 0.3,
-        });
+        const cap = Math.min(type.maxQty, this._qtyCap(getItem(pick.id)));
+        wants.push({ itemId: pick.id, qty: 1 + Math.floor(rng() * cap), noise: 0.95 + rng() * 0.3 });
       }
       return { id: `${s.day}-${i + 1}`, type: type.id, spawnAt: t, wants };
     });
@@ -213,11 +775,17 @@ export class GameEngine {
 
   startDay() {
     this._requireIdle();
+    this.lastRestock = this.runAutoRestock();
+    if (this.state.autoPrice.on) this.setAllPrices(this.state.autoPrice.pct);
     this.plan = this.generatePlan();
     this.reserved.clear();
     this.today = { revenue: 0, cogs: 0, customers: this.plan.length, served: 0, lost: 0, soldUnits: 0 };
     this.state.phase = 'open';
     return this.plan;
+  }
+
+  _typeOf(customer) {
+    return CUSTOMER_TYPES.find((t) => t.id === customer.type);
   }
 
   // Dipanggil saat toko ditutup lebih awal: pelanggan yang belum datang tidak dihitung.
@@ -226,22 +794,22 @@ export class GameEngine {
     this.today.customers = Math.max(0, this.today.customers - count);
   }
 
-  _typeOf(customer) {
-    return CUSTOMER_TYPES.find((t) => t.id === customer.type);
-  }
-
   // Pelanggan melihat satu barang di rak. Stok langsung dipesan agar tidak terjual dua kali.
   browse(customer, wantIdx) {
     if (this.state.phase !== 'open') throw new Error('Toko belum buka');
     const want = customer.wants[wantIdx];
     const type = this._typeOf(customer);
+    const item = getItem(want.itemId);
     const lots = this.stockLots().filter((l) => l.itemId === want.itemId);
     if (lots.length === 0) return { ok: false, itemId: want.itemId, reason: 'habis' };
 
+    const m = this.mods();
+    const prem = 0.06 * (this.state.upgrades[`prem_${item.cat}`] || 0);
+    const wtpMult = (1 + m.wtp + prem) * type.wtp * want.noise;
     const affordable = lots
       .filter((l) => l.quality >= type.minQuality)
       .map((l) => ({ ...l, price: this.priceOf(l.itemId, l.quality) }))
-      .filter((l) => l.price <= Math.floor(this.retailRef(l.itemId, l.quality) * type.wtp * want.noise));
+      .filter((l) => l.price <= Math.floor(this.retailRef(l.itemId, l.quality) * wtpMult));
     if (affordable.length === 0) {
       const tooLow = lots.every((l) => l.quality < type.minQuality);
       return { ok: false, itemId: want.itemId, reason: tooLow ? 'kualitas' : 'mahal' };
@@ -253,9 +821,7 @@ export class GameEngine {
     const costOut = qty === lot.qty ? lot.cost : Math.round((lot.cost * qty) / lot.qty);
     lot.qty -= qty;
     lot.cost -= costOut;
-    if (lot.qty === 0) {
-      lot.cost = 0;
-    }
+    if (lot.qty === 0) lot.cost = 0;
     const revenue = pick.price * qty;
     const list = this.reserved.get(customer.id) || [];
     list.push({ key: pick.key, qty, cost: costOut, revenue });
@@ -283,10 +849,30 @@ export class GameEngine {
     else this.today.lost += 1;
   }
 
+  _payUpTo(type, amount, desc) {
+    const s = this.state;
+    const pay = Math.min(amount, s.ledger.balance);
+    if (pay > 0) debit(s.ledger, s.day, type, pay, desc);
+    return pay;
+  }
+
+  _updateSharePrices(day) {
+    const s = this.state;
+    for (const sh of SHARES) {
+      const sp = s.sharePrices[sh.id];
+      const rng = mulberry32(hashSeed(s.seed, 'share', sh.id, day));
+      const change = (rng() - 0.5) * 2 * sh.vol + sh.drift;
+      sp.price = Math.max(SHARE_MIN_PRICE, Math.round(sp.price * (1 + change)));
+      sp.hist.push(sp.price);
+      if (sp.hist.length > SHARE_HISTORY) sp.hist.shift();
+    }
+  }
+
   endDay() {
     if (this.state.phase !== 'open') throw new Error('Toko belum buka');
     const s = this.state;
     const day = s.day;
+    const m = this.mods();
 
     // Kembalikan pesanan yang belum dibayar (jaga integritas stok dan uang).
     for (const [id, list] of this.reserved) {
@@ -300,20 +886,64 @@ export class GameEngine {
       this.reserved.delete(id);
     }
 
-    // Bayar tunggakan lalu sewa harian.
-    let arrearsPaid = 0;
-    if (s.arrears > 0 && s.ledger.balance > 0) {
-      arrearsPaid = Math.min(s.arrears, s.ledger.balance);
-      debit(s.ledger, day, 'arrears', arrearsPaid, 'Bayar tunggakan sewa');
-      s.arrears -= arrearsPaid;
-    }
-    const rentPaid = Math.min(DAILY_RENT, s.ledger.balance);
-    if (rentPaid > 0) debit(s.ledger, day, 'rent', rentPaid, 'Sewa toko harian');
-    s.arrears += DAILY_RENT - rentPaid;
+    // Pemasukan pasif lebih dulu: properti dan deposito yang jatuh tempo.
+    const propIncome = this.propertyIncome();
+    if (propIncome > 0) credit(s.ledger, day, 'rent_income', propIncome, 'Pendapatan sewa properti');
+    let depositReturn = 0;
+    let depositInterest = 0;
+    s.deposits = s.deposits.filter((d) => {
+      if (day < d.matureDay) return true;
+      credit(s.ledger, day, 'invest_return', d.principal, 'Deposito jatuh tempo');
+      if (d.interest > 0) credit(s.ledger, day, 'interest', d.interest, 'Bunga deposito');
+      depositReturn += d.principal;
+      depositInterest += d.interest;
+      return false;
+    });
 
+    // Kewajiban: tunggakan, sewa, gaji, cicilan.
+    const arrearsPaid = s.arrears > 0 ? this._payUpTo('arrears', s.arrears, 'Bayar tunggakan sewa dan gaji') : 0;
+    s.arrears -= arrearsPaid;
+    const rentPaid = this._payUpTo('rent', m.rent, 'Sewa toko harian');
+    s.arrears += m.rent - rentPaid;
+    let wagesDue = 0;
+    let wagesPaid = 0;
+    for (const st of STAFF) {
+      if (!s.staff[st.id]) continue;
+      wagesDue += st.wage;
+      const paid = this._payUpTo('wage', st.wage, `Gaji ${st.name}`);
+      wagesPaid += paid;
+      s.arrears += st.wage - paid;
+    }
+    let loanPaid = 0;
+    let anyLate = false;
+    s.loans = s.loans.filter((l) => {
+      const due = l.daysLeft > 0 ? Math.min(l.perDay, l.remaining) : l.remaining;
+      const paid = this._payUpTo('loan_pay', due, 'Cicilan pinjaman bank');
+      loanPaid += paid;
+      l.remaining -= paid;
+      if (paid < due) {
+        l.remaining += Math.ceil((due - paid) * LOAN_LATE_FEE);
+        l.late += 1;
+        anyLate = true;
+      }
+      l.daysLeft = Math.max(0, l.daysLeft - 1);
+      return l.remaining > 0;
+    });
+
+    // Reputasi dan bintang (bintang tidak pernah turun)
     const t = this.today;
-    const repDelta = Math.round(t.served * 0.4 - t.lost * 0.3);
-    s.reputation = clamp(s.reputation + repDelta, 5, 100);
+    // Reputasi naik pelan dan makin sulit mendekati 100. Disimpan dengan satu desimal.
+    const rawDelta = t.served * 0.16 * m.repGain * (1 - s.reputation / 140) - t.lost * 0.1 * m.repLoss - (anyLate ? 2 : 0);
+    const floorRep = Math.max(5, STAR_THRESH[s.stars - 1]);
+    const newRep = clamp(Math.round((s.reputation + rawDelta) * 10) / 10, floorRep, 100);
+    const repDelta = Math.round((newRep - s.reputation) * 10) / 10;
+    s.reputation = newRep;
+    const newStars = starsFor(s.reputation);
+    let starUp = null;
+    if (newStars > s.stars) {
+      starUp = { from: s.stars, to: newStars };
+      s.stars = newStars;
+    }
     s.stats.revenue += t.revenue;
     s.stats.customers += t.customers;
     s.stats.bestDay = Math.max(s.stats.bestDay, t.revenue);
@@ -321,27 +951,44 @@ export class GameEngine {
     const byType = sumByType(s.ledger, day);
     const summary = {
       day,
+      event: m.event.id,
       revenue: t.revenue,
       cogs: t.cogs,
       grossProfit: t.revenue - t.cogs,
-      rent: DAILY_RENT,
-      net: t.revenue - t.cogs - DAILY_RENT,
+      rent: m.rent,
+      wages: wagesDue,
+      net: t.revenue - t.cogs - m.rent - wagesDue,
+      propIncome,
+      depositReturn,
+      depositInterest,
+      loanPaid,
+      arrearsPaid,
       customers: t.customers,
       served: t.served,
       lost: t.lost,
       soldUnits: t.soldUnits,
       repDelta,
+      stars: s.stars,
+      starUp,
       endCash: s.ledger.balance,
       arrears: s.arrears,
       cashFlow: byType,
+      restock: this.lastRestock,
     };
     s.history.push(summary);
     if (s.history.length > 30) s.history.shift();
 
+    // Ramuan berkurang satu hari, harga saham bergerak, lalu hari berganti.
+    for (const id of Object.keys(s.buffs)) {
+      s.buffs[id] -= 1;
+      if (s.buffs[id] <= 0) delete s.buffs[id];
+    }
+    this._updateSharePrices(day);
     s.day += 1;
     s.phase = 'idle';
     this.plan = [];
     this.today = null;
+    this.lastRestock = [];
     return summary;
   }
 
@@ -349,3 +996,5 @@ export class GameEngine {
     return this.state.phase === 'idle';
   }
 }
+
+export { catIndex };

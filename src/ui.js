@@ -1,8 +1,19 @@
-import { ITEMS, QUALITIES, UPGRADES, getItem, getQuality, getUpgrade, lotKey, DAILY_RENT } from './core/catalog.js';
+import {
+  CATEGORIES, QUALITIES, STAR_PERKS, getItem, getQuality, itemsOf, parseLotKey,
+} from './core/catalog.js';
 import { DAY_LENGTH_SEC } from './core/engine.js';
 import { auditLedger } from './core/ledger.js';
 
 export const rp = (n) => 'Rp ' + Math.round(n).toLocaleString('id-ID');
+export function rpShort(n) {
+  const a = Math.abs(n);
+  const sign = n < 0 ? '-' : '';
+  if (a >= 1e9) return `${sign}Rp ${(a / 1e9).toFixed(2).replace('.', ',')} M`;
+  if (a >= 1e7) return `${sign}Rp ${(a / 1e6).toFixed(1).replace('.', ',')} jt`;
+  return rp(n);
+}
+export const starsText = (n) => '★'.repeat(n) + '☆'.repeat(5 - n);
+export const qStars = (n) => '★'.repeat(n) + '☆'.repeat(5 - n);
 
 export function h(tag, attrs = {}, ...kids) {
   const el = document.createElement(tag);
@@ -25,14 +36,21 @@ export function toast(msg, kind = '') {
   const root = document.getElementById('toast-root');
   const el = h('div', { class: `toast ${kind}` }, msg);
   root.append(el);
-  setTimeout(() => el.remove(), 2600);
+  setTimeout(() => el.remove(), 2800);
 }
 
-const stars = (n) => '★'.repeat(n) + '☆'.repeat(5 - n);
+export const CAT_EMOJI = { perlengkapan: '🪱', ikan: '🐟', burung: '🐦', reptil: '🦎', kecil: '🐹' };
+
+export const FLOW_LABEL = {
+  sale: 'Penjualan', buy_stock: 'Belanja stok', rent: 'Sewa toko', wage: 'Gaji karyawan', arrears: 'Tunggakan',
+  upgrade: 'Upgrade', expand: 'Perluas toko', species: 'Kontrak spesies', potion: 'Ramuan', breeding: 'Breeding',
+  invest: 'Deposito', invest_return: 'Deposito kembali', interest: 'Bunga', stock_buy: 'Beli saham', stock_sell: 'Jual saham',
+  property: 'Beli properti', property_sale: 'Jual properti', rent_income: 'Sewa properti', loan: 'Pinjaman', loan_pay: 'Cicilan pinjaman',
+};
 
 export class UI {
   constructor(ctx) {
-    // ctx: { engine, scene(), persist(), openShop(), closeShop(), setSpeed(), newGame(), importText() , exportText() }
+    // ctx: { engine, scene(), persist(), openShop(), closeShop(), setSpeed(), newGame(), importText(), exportFile() }
     this.ctx = ctx;
     this.modal = null;
     this.speed = 1;
@@ -47,13 +65,13 @@ export class UI {
   buildHud() {
     const hud = document.getElementById('hud');
     this.hudDay = h('span', { class: 'hud-chip' });
-    this.hudRep = h('span', { class: 'hud-chip' });
+    this.hudStar = h('span', { class: 'hud-chip star' });
     this.hudDebt = h('span', { class: 'hud-chip warn', style: 'display:none' });
     this.hudCash = h('div', { class: 'hud-cash' });
     this.hudLive = h('div', { class: 'sub' });
     this.hudBar = h('i');
     hud.append(
-      h('div', { class: 'hud-row' }, h('div', { class: 'hud-title' }, '🐟 Fajmuls Simulator'), h('div', { class: 'row' }, this.hudDay, this.hudRep)),
+      h('div', { class: 'hud-row' }, h('div', { class: 'hud-title' }, '🐾 Pasar Satwa'), h('div', { class: 'row' }, this.hudDay, this.hudStar)),
       h('div', { class: 'hud-row' }, this.hudCash, this.hudDebt),
       h('div', { class: 'hud-row' }, this.hudLive),
       h('div', { class: 'bar' }, this.hudBar),
@@ -62,22 +80,28 @@ export class UI {
   }
 
   refreshHud(tick) {
-    const s = this.e.state;
+    const e = this.e;
+    const s = e.state;
     this.hudDay.innerHTML = `Hari <b>${s.day}</b>`;
-    this.hudRep.innerHTML = `Reputasi <b>${s.reputation}</b>`;
-    this.hudCash.textContent = rp(s.ledger.balance);
-    if (s.arrears > 0) {
+    this.hudStar.innerHTML = `<b>${starsText(s.stars)}</b>`;
+    this.hudCash.textContent = rpShort(s.ledger.balance);
+    const owed = s.arrears + e.loanOutstanding();
+    if (owed > 0) {
       this.hudDebt.style.display = '';
-      this.hudDebt.textContent = `Tunggakan ${rp(s.arrears)}`;
+      this.hudDebt.textContent = `Utang ${rpShort(owed)}`;
     } else this.hudDebt.style.display = 'none';
 
     if (s.phase === 'open' && tick) {
       const t = tick.today;
-      this.hudLive.textContent = `Toko BUKA · dilayani ${t.served}/${t.customers} · omzet ${rp(t.revenue)}${tick.closing ? ' · menutup...' : ''}`;
+      this.hudLive.textContent = `Toko BUKA · dilayani ${t.served}/${t.customers} · omzet ${rpShort(t.revenue)}${tick.closing ? ' · menutup...' : ''}`;
       this.hudBar.style.width = `${Math.round(tick.progress * 100)}%`;
     } else if (s.phase === 'idle') {
-      this.hudLive.textContent = `Toko TUTUP · stok ${this.e.usedCapacity()}/${this.e.capacity()} unit · sewa harian ${rp(DAILY_RENT)}`;
-      this.hudBar.style.width = '0%';
+      const ev = e.mods().event;
+      const low = e.lowStock().length;
+      const sp = e.starProgress();
+      this.hudLive.textContent = `Toko TUTUP · stok ${e.usedCapacity()}/${e.capacity()} · ${ev.icon} ${ev.name}${low ? ` · ⚠ ${low} barang tipis` : ''}`;
+      this.hudBar.style.width = `${sp.pct}%`;
+      this.hudBar.parentElement.title = sp.to ? `Reputasi ${sp.rep.toFixed(1)} / ${sp.to} untuk bintang berikutnya` : 'Bintang maksimum';
     }
     this.syncDock();
   }
@@ -90,7 +114,7 @@ export class UI {
       ['harga', '🏷️', 'Harga', () => this.openHarga(), true],
       ['stok', '📦', 'Stok', () => this.openStok(), false],
       ['laporan', '📈', 'Laporan', () => this.openLaporan(), false],
-      ['upgrade', '⚙️', 'Upgrade', () => this.openUpgrade(), true],
+      ['fitur', '🗂️', 'Fitur', () => this.openFitur(), false],
       ['menu', '☰', 'Menu', () => this.openMenu(), false],
     ];
     const tabs = h('div', { class: 'dock-tabs' });
@@ -102,8 +126,8 @@ export class UI {
     }
     this.goBtn = h('button', { class: 'btn go', onClick: () => this.toggleShop() });
     this.speedBox = h('div', { class: 'speed' });
-    for (const s of [1, 2, 4]) {
-      const b = h('button', { class: 'btn secondary', onClick: () => { this.speed = s; this.ctx.setSpeed(s); this.syncDock(); } }, `${s}x`);
+    for (const [label, s] of [['⏸', 0], ['1x', 1], ['2x', 2], ['4x', 4], ['8x', 8]]) {
+      const b = h('button', { class: 'btn secondary', onClick: () => { this.speed = s; this.ctx.setSpeed(s); this.syncDock(); } }, label);
       b.dataset.s = s;
       this.speedBox.append(b);
     }
@@ -129,7 +153,11 @@ export class UI {
         if (!confirm('Stok kosong. Pelanggan tidak bisa membeli apa pun. Tetap buka toko?')) return;
       }
       this.closeModal();
+      this.speed = this.speed === 0 ? 1 : this.speed;
       this.ctx.openShop();
+      this.ctx.setSpeed(this.speed);
+      const log = this.e.lastRestock;
+      if (log?.length) toast(`Penjaga Stok mengisi ${log.length} jenis barang`, 'ok');
       this.syncDock();
     }
   }
@@ -159,10 +187,12 @@ export class UI {
     this.modal = null;
   }
 
+  // Menjalankan aksi game: tampilkan pesan, simpan, segarkan tampilan.
   act(fn, okMsg) {
     try {
-      fn();
-      if (okMsg) toast(okMsg, 'ok');
+      const r = fn();
+      const msg = typeof okMsg === 'function' ? okMsg(r) : okMsg;
+      if (msg) toast(msg, 'ok');
       this.ctx.persist();
       this.ctx.scene()?.refreshShelves();
     } catch (err) {
@@ -172,75 +202,126 @@ export class UI {
     this.rerender();
   }
 
+  numInput({ value, min = 0, max = 1e12, step = 1, onChange, width }) {
+    const input = h('input', { type: 'number', min, max, value, inputMode: 'numeric', style: width ? `width:${width}px` : null,
+      onChange: (ev) => onChange(Math.floor(Number(ev.target.value) || 0)) });
+    return input;
+  }
+
+  chips(options, current, onPick) {
+    return h('div', { class: 'chips' }, options.map((o) => h('button', { class: `chip${o.id === current ? ' on' : ''}`, onClick: () => onPick(o.id) }, o.label)));
+  }
+
+  lockCard(text) {
+    return h('div', { class: 'card' }, h('div', { class: 'sub' }, `🔒 ${text}`));
+  }
+
   // ---------- Grosir ----------
   openGrosir() {
     this.sel = this.sel || {};
+    this.grosirCat = this.grosirCat || 'perlengkapan';
     this.openSheet('🛒 Grosir', () => {
       const e = this.e;
+      const s = e.state;
       const used = e.usedCapacity();
       const cap = e.capacity();
+      const m = e.mods();
+      const openCats = CATEGORIES.filter((c) => e.categoryOpen(c.id));
+      if (!openCats.some((c) => c.id === this.grosirCat)) this.grosirCat = openCats[0].id;
       const out = [
         h('div', { class: 'card' },
           h('div', { class: 'card-top' }, h('b', {}, 'Kapasitas toko'), h('span', { class: 'price' }, `${used} / ${cap}`)),
           h('div', { class: 'meter' }, h('i', { style: `width:${Math.min(100, (used / cap) * 100)}%` })),
-          h('div', { class: 'sub' }, `Uang: ${rp(e.state.ledger.balance)}. Harga grosir berubah tiap hari.`)),
+          h('div', { class: 'sub' }, `Uang: ${rp(s.ledger.balance)} · ${m.event.icon} ${m.event.name}: ${m.event.desc}`),
+          m.disc > 0 ? h('div', { class: 'sub good' }, `Diskon grosir aktif ${Math.round(m.disc * 100)}%`) : null,
+          s.breeding.length ? h('div', { class: 'sub' }, `Termasuk ${s.breeding.length * 2} induk di kandang breeding`) : null,
+          e.skillRank('insting') > 0 ? h('div', { class: 'sub' }, `🔮 Besok: ${e.eventOf(s.day + 1).icon} ${e.eventOf(s.day + 1).name}`) : null),
+        h('button', { class: 'btn secondary', onClick: () => this.act(() => e.restockLast(), (log) => (log.length ? `Isi ulang ${log.length} jenis barang · ${rp(log.reduce((a, b) => a + b.cost, 0))}` : 'Semua barang sudah cukup atau uang/ruang kurang')) }, '🔁 Isi ulang yang menipis (sesuai pembelian terakhir)'),
+        this.chips(openCats.map((c) => ({ id: c.id, label: `${CAT_EMOJI[c.id]} ${c.short}` })), this.grosirCat, (id) => { this.grosirCat = id; this.rerender(); }),
       ];
-      for (const it of e.unlockedItems()) {
-        const s = (this.sel[it.id] ||= { q: Math.min(3, e.maxQuality()), n: 5 });
-        s.q = Math.min(s.q, e.maxQuality());
-        const unit = e.wholesalePrice(it.id, s.q);
-        const yesterday = e.state.day > 1 ? e.wholesalePrice(it.id, s.q, e.state.day - 1) : unit;
+      for (const it of itemsOf(this.grosirCat)) {
+        if (!e.isUnlocked(it.id)) {
+          out.push(this.lockCard(`${it.name}: buka lewat Daftar Hewan (Fitur → Daftar Hewan)`));
+          continue;
+        }
+        const sel = (this.sel[it.id] ||= { q: Math.min(3, e.maxQuality()), n: 5 });
+        sel.q = Math.min(sel.q, e.maxQuality());
+        const unit = e.wholesalePrice(it.id, sel.q);
+        const yesterday = s.day > 1 ? e.wholesalePrice(it.id, sel.q, s.day - 1) : unit;
         const diff = unit - yesterday;
-        const max = e.maxAffordable(it.id, s.q);
-        s.n = Math.max(1, Math.min(s.n, Math.max(1, max)));
-        const total = unit * s.n;
-        const qSel = h('select', { onChange: (ev) => { s.q = Number(ev.target.value); this.rerender(); } },
-          QUALITIES.filter((q) => q.id <= e.maxQuality()).map((q) => h('option', { value: q.id, selected: q.id === s.q }, `${q.name} ${stars(q.stars)} · ${rp(e.wholesalePrice(it.id, q.id))}`)));
-        const nInput = h('input', { type: 'number', min: 1, max: Math.max(1, max), value: s.n, inputMode: 'numeric', onChange: (ev) => { s.n = Math.max(1, Math.floor(Number(ev.target.value) || 1)); this.rerender(); } });
+        const avg = it.wholesale * getQuality(sel.q).mult * (1 - m.disc);
+        const max = e.maxAffordable(it.id, sel.q);
+        sel.n = Math.max(1, Math.min(sel.n, Math.max(1, max)));
+        const total = unit * sel.n;
+        const have = e.totalQty(it.id);
+        const badge = unit <= avg * 0.93 ? h('span', { class: 'badge good' }, 'murah') : unit >= avg * 1.07 ? h('span', { class: 'badge bad' }, 'mahal') : null;
+        const qSel = h('select', { onChange: (ev) => { sel.q = Number(ev.target.value); this.rerender(); } },
+          QUALITIES.filter((q) => q.id <= e.maxQuality()).map((q) => h('option', { value: q.id, selected: q.id === sel.q }, `${q.name} ${qStars(q.stars)} · ${rp(e.wholesalePrice(it.id, q.id))}`)));
+        const nInput = h('input', { type: 'number', min: 1, max: Math.max(1, max), value: sel.n, inputMode: 'numeric', onChange: (ev) => { sel.n = Math.max(1, Math.floor(Number(ev.target.value) || 1)); this.rerender(); } });
         out.push(h('div', { class: 'card' },
           h('div', { class: 'card-top' },
-            h('div', {}, h('div', { class: 'card-title' }, it.name), h('div', { class: 'sub' }, it.category)),
+            h('div', {}, h('div', { class: 'card-title' }, `${CAT_EMOJI[it.cat]} ${it.name} `, badge), h('div', { class: 'sub' }, `stok ${have}${s.lastBuy[it.id] ? ` · terakhir beli ${s.lastBuy[it.id].n}` : ''}`)),
             h('div', { class: 'price' }, rp(unit), ' ', h('span', { class: diff > 0 ? 'up' : diff < 0 ? 'down' : 'sub' }, diff === 0 ? '' : (diff > 0 ? `▲${diff}` : `▼${-diff}`)))),
+          e.skillRank('insting') > 0 ? h('div', { class: 'sub' }, `🔮 Besok ±${rp(e.wholesalePrice(it.id, sel.q, s.day + 1))}`) : null,
           qSel,
           h('div', { class: 'row' },
             h('div', { class: 'stepper' },
-              h('button', { onClick: () => { s.n = Math.max(1, s.n - 1); this.rerender(); } }, '−'),
+              h('button', { onClick: () => { sel.n = Math.max(1, sel.n - 1); this.rerender(); } }, '−'),
               nInput,
-              h('button', { onClick: () => { s.n = Math.min(Math.max(1, max), s.n + 1); this.rerender(); } }, '+')),
-            h('button', { class: 'btn secondary small', onClick: () => { s.n = Math.max(1, max); this.rerender(); } }, `Maks (${max})`),
+              h('button', { onClick: () => { sel.n = Math.min(Math.max(1, max), sel.n + 1); this.rerender(); } }, '+')),
+            h('button', { class: 'btn secondary small', onClick: () => { sel.n = Math.max(1, max); this.rerender(); } }, `Maks (${max})`),
             h('div', { class: 'grow price', style: 'text-align:right' }, rp(total))),
-          h('button', { class: 'btn', disabled: max < 1 || s.n > max, onClick: () => this.act(() => e.buyStock(it.id, s.q, s.n), `Dibeli ${s.n} ${it.name}`) },
-            max < 1 ? 'Tidak bisa beli (uang/ruang kurang)' : `Beli ${s.n} · ${rp(total)}`)));
+          h('button', { class: 'btn', disabled: max < 1 || sel.n > max, onClick: () => this.act(() => e.buyStock(it.id, sel.q, sel.n), `Dibeli ${sel.n} ${it.name}`) },
+            max < 1 ? 'Tidak bisa beli (uang/ruang kurang)' : `Beli ${sel.n} · ${rp(total)}`)));
       }
-      const locked = ITEMS.filter((i) => !e.isUnlocked(i.id));
-      if (locked.length) out.push(h('div', { class: 'sub' }, `Terkunci: ${locked.map((i) => i.name).join(', ')} (buka lewat Kontrak Supplier).`));
       return out;
     });
   }
 
   // ---------- Harga ----------
   openHarga() {
+    this.pctInput = this.pctInput ?? -10;
     this.openSheet('🏷️ Atur Harga Jual', () => {
       const e = this.e;
+      const s = e.state;
       const lots = e.stockLots();
-      const out = [h('div', { class: 'sub' }, 'Harga di bawah pasar menarik lebih banyak pelanggan. Di atas pasar, hanya pembeli royal yang mau. Si Pelit hanya membeli jika murah.')];
+      const bulk = (pct, label) => h('button', { class: 'btn secondary small', onClick: () => this.act(() => e.setAllPrices(pct), (n) => `${n} barang dihargai ${label}`) }, label);
+      const pctBox = this.numInput({ value: this.pctInput, min: -90, max: 400, width: 80, onChange: (v) => { this.pctInput = v; this.rerender(); } });
+      pctBox.min = -90;
+      const out = [
+        h('div', { class: 'card' },
+          h('b', {}, 'Atur semua harga sekaligus'),
+          h('div', { class: 'row' }, bulk(0, 'Harga pasar'), bulk(-5, 'Pasar -5%'), bulk(-10, 'Pasar -10%'), bulk(10, 'Pasar +10%')),
+          h('div', { class: 'row' }, h('span', { class: 'sub' }, 'Lainnya (%):'), pctBox,
+            h('button', { class: 'btn small', onClick: () => this.act(() => e.setAllPrices(this.pctInput), (n) => `${n} barang dihargai pasar ${this.pctInput >= 0 ? '+' : ''}${this.pctInput}%`) }, 'Terapkan')),
+          h('label', { class: 'row sub' },
+            h('input', { type: 'checkbox', checked: s.autoPrice.on, style: 'width:auto;min-height:0', onChange: (ev) => this.act(() => e.setAutoPrice(ev.target.checked, this.pctInput), ev.target.checked ? `Harga otomatis aktif: pasar ${this.pctInput >= 0 ? '+' : ''}${this.pctInput}% tiap toko dibuka` : 'Harga otomatis dimatikan') }),
+            `Otomatis tiap toko dibuka (mengikuti harga pasar ${s.autoPrice.on ? `${s.autoPrice.pct >= 0 ? '+' : ''}${s.autoPrice.pct}%` : 'sesuai kolom di atas'})`),
+          h('div', { class: 'sub' }, 'Harga pasar berubah tiap hari. Di bawah pasar menarik lebih banyak pelanggan; Si Pelit hanya membeli jika murah.')),
+      ];
       if (!lots.length) out.push(h('div', { class: 'card' }, 'Belum ada stok. Beli dulu di Grosir.'));
-      for (const lot of lots) {
-        const ref = e.retailRef(lot.itemId, lot.quality);
-        const price = e.priceOf(lot.itemId, lot.quality);
-        const unitCost = Math.round(lot.cost / lot.qty);
-        const margin = price - unitCost;
-        const input = h('input', { type: 'number', min: 1, value: price, inputMode: 'numeric' });
-        const apply = (v) => this.act(() => e.setPrice(lot.itemId, lot.quality, v));
-        out.push(h('div', { class: 'card' },
-          h('div', { class: 'card-top' },
-            h('div', {}, h('div', { class: 'card-title' }, getItem(lot.itemId).name, ' ', h('span', { class: 'stars' }, stars(getQuality(lot.quality).stars))), h('div', { class: 'sub' }, `${getQuality(lot.quality).name} · stok ${lot.qty} · modal ±${rp(unitCost)}/unit`)),
-            h('div', { class: 'price' }, `Pasar ${rp(ref)}`)),
-          h('div', { class: 'row' },
-            h('div', { class: 'grow' }, input),
-            h('button', { class: 'btn small', onClick: () => apply(Math.floor(Number(input.value))) }, 'Simpan'),
-            h('button', { class: 'btn secondary small', onClick: () => apply(e.suggestedPrice(lot.itemId, lot.quality)) }, 'Harga pasar')),
-          h('div', { class: `sub ${margin < 0 ? 'bad' : 'good'}` }, `Untung per unit: ${margin >= 0 ? '+' : ''}${rp(margin)} (${Math.round((margin / Math.max(1, price)) * 100)}%)`)));
+      for (const cat of CATEGORIES) {
+        const catLots = lots.filter((l) => getItem(l.itemId).cat === cat.id);
+        if (!catLots.length) continue;
+        out.push(h('div', { class: 'sub', style: 'font-weight:700;margin-top:4px' }, `${CAT_EMOJI[cat.id]} ${cat.name}`));
+        for (const lot of catLots) {
+          const ref = e.retailRef(lot.itemId, lot.quality);
+          const price = e.priceOf(lot.itemId, lot.quality);
+          const unitCost = Math.round(lot.cost / lot.qty);
+          const margin = price - unitCost;
+          const input = h('input', { type: 'number', min: 1, value: price, inputMode: 'numeric' });
+          const apply = (v) => this.act(() => e.setPrice(lot.itemId, lot.quality, v));
+          out.push(h('div', { class: 'card' },
+            h('div', { class: 'card-top' },
+              h('div', {}, h('div', { class: 'card-title' }, getItem(lot.itemId).name, ' ', h('span', { class: 'stars' }, qStars(getQuality(lot.quality).stars))),
+                h('div', { class: 'sub' }, `${getQuality(lot.quality).name} · stok ${lot.qty} · modal ±${rp(unitCost)}/unit`)),
+              h('div', { class: 'price' }, `Pasar ${rp(ref)}`)),
+            h('div', { class: 'row' },
+              h('div', { class: 'grow' }, input),
+              h('button', { class: 'btn small', onClick: () => apply(Math.floor(Number(input.value))) }, 'Simpan'),
+              h('button', { class: 'btn secondary small', onClick: () => apply(e.suggestedPrice(lot.itemId, lot.quality)) }, 'Pasar')),
+            h('div', { class: `sub ${margin < 0 ? 'bad' : 'good'}` }, `${margin < 0 ? '⚠ RUGI ' : ''}Untung per unit: ${margin >= 0 ? '+' : ''}${rp(margin)} (${Math.round((margin / Math.max(1, price)) * 100)}%)`)));
+        }
       }
       return out;
     });
@@ -255,14 +336,20 @@ export class UI {
       const out = [h('div', { class: 'card' },
         h('div', { class: 'card-top' }, h('b', {}, 'Kapasitas'), h('span', { class: 'price' }, `${used} / ${e.capacity()}`)),
         h('div', { class: 'meter' }, h('i', { style: `width:${Math.min(100, (used / e.capacity()) * 100)}%` })))];
+      const low = e.lowStock();
+      if (low.length) out.push(h('div', { class: 'card' }, h('b', { class: 'bad' }, '⚠ Stok menipis'), h('div', { class: 'sub' }, low.map((l) => `${getItem(l.itemId).name} (${l.qty})`).join(', '))));
       if (!lots.length) out.push(h('div', { class: 'card' }, 'Stok kosong.'));
       else {
         const value = lots.reduce((s, l) => s + l.cost, 0);
-        out.push(h('div', { class: 'card' },
-          h('table', {},
-            h('tr', {}, h('th', {}, 'Barang'), h('th', {}, 'Qty'), h('th', {}, 'Modal'), h('th', {}, 'Harga')),
-            lots.map((l) => h('tr', {}, h('td', {}, `${getItem(l.itemId).name} (${getQuality(l.quality).name})`), h('td', {}, l.qty), h('td', {}, rp(l.cost)), h('td', {}, rp(e.priceOf(l.itemId, l.quality)))))),
-          h('div', { class: 'sub' }, `Nilai modal stok: ${rp(value)}`)));
+        for (const cat of CATEGORIES) {
+          const catLots = lots.filter((l) => getItem(l.itemId).cat === cat.id);
+          if (!catLots.length) continue;
+          out.push(h('div', { class: 'card' }, h('b', {}, `${CAT_EMOJI[cat.id]} ${cat.name}`),
+            h('table', {},
+              h('tr', {}, h('th', {}, 'Barang'), h('th', {}, 'Qty'), h('th', {}, 'Modal'), h('th', {}, 'Harga')),
+              catLots.map((l) => h('tr', {}, h('td', {}, `${getItem(l.itemId).name} (${getQuality(l.quality).name})`), h('td', {}, l.qty), h('td', {}, rp(l.cost)), h('td', {}, rp(e.priceOf(l.itemId, l.quality))))))));
+        }
+        out.push(h('div', { class: 'sub' }, `Nilai modal stok: ${rp(value)}`));
       }
       return out;
     });
@@ -271,21 +358,24 @@ export class UI {
   // ---------- Laporan ----------
   openLaporan() {
     this.openSheet('📈 Laporan Keuangan', () => {
-      const s = this.e.state;
+      const e = this.e;
+      const s = e.state;
       const last = s.history[s.history.length - 1];
       const out = [h('div', { class: 'grid2' },
         h('div', { class: 'stat' }, 'Uang kas', h('b', {}, rp(s.ledger.balance))),
-        h('div', { class: 'stat' }, 'Total omzet', h('b', {}, rp(s.stats.revenue))),
-        h('div', { class: 'stat' }, 'Hari terbaik', h('b', {}, rp(s.stats.bestDay))),
-        h('div', { class: 'stat' }, 'Total pelanggan', h('b', {}, s.stats.customers)))];
+        h('div', { class: 'stat' }, 'Kekayaan bersih', h('b', {}, rpShort(e.netWorth()))),
+        h('div', { class: 'stat' }, 'Total omzet', h('b', {}, rpShort(s.stats.revenue))),
+        h('div', { class: 'stat' }, 'Hari terbaik', h('b', {}, rpShort(s.stats.bestDay))),
+        h('div', { class: 'stat' }, 'Total pelanggan', h('b', {}, s.stats.customers)),
+        h('div', { class: 'stat' }, 'Utang', h('b', {}, rpShort(s.arrears + e.loanOutstanding()))))];
       if (last) out.push(this.summaryCard(last, `Hari ${last.day} (terakhir)`));
       if (s.history.length) {
         out.push(h('div', { class: 'card' }, h('b', {}, '10 hari terakhir'),
           h('table', {},
             h('tr', {}, h('th', {}, 'Hari'), h('th', {}, 'Omzet'), h('th', {}, 'Laba'), h('th', {}, 'Plgn')),
-            s.history.slice(-10).reverse().map((r) => h('tr', {}, h('td', {}, r.day), h('td', {}, rp(r.revenue)), h('td', { class: r.net >= 0 ? 'good' : 'bad' }, rp(r.net)), h('td', {}, `${r.served}/${r.customers}`))))));
+            s.history.slice(-10).reverse().map((r) => h('tr', {}, h('td', {}, r.day), h('td', {}, rpShort(r.revenue)), h('td', { class: r.net >= 0 ? 'good' : 'bad' }, rpShort(r.net)), h('td', {}, `${r.served}/${r.customers}`))))));
       } else out.push(h('div', { class: 'card' }, 'Belum ada hari yang selesai. Buka toko dulu.'));
-      const recent = s.ledger.entries.slice(-8).reverse();
+      const recent = s.ledger.entries.slice(-10).reverse();
       if (recent.length) {
         out.push(h('div', { class: 'card' }, h('b', {}, 'Transaksi terakhir'),
           h('table', {}, recent.map((x) => h('tr', {}, h('td', {}, `H${x.day} ${x.desc}`), h('td', { class: x.amount >= 0 ? 'good' : 'bad' }, (x.amount >= 0 ? '+' : '') + rp(x.amount)))))));
@@ -295,45 +385,50 @@ export class UI {
   }
 
   summaryCard(r, title) {
+    const rows = [
+      ['Omzet penjualan', rp(r.revenue)],
+      ['Modal barang terjual', '− ' + rp(r.cogs)],
+      ['Laba kotor', rp(r.grossProfit)],
+      ['Sewa toko', '− ' + rp(r.rent)],
+    ];
+    if (r.wages) rows.push(['Gaji karyawan', '− ' + rp(r.wages)]);
     return h('div', { class: 'card' },
       h('div', { class: 'card-top' }, h('b', {}, title), h('span', { class: `price ${r.net >= 0 ? 'good' : 'bad'}` }, `${r.net >= 0 ? '+' : ''}${rp(r.net)}`)),
-      h('table', {},
-        h('tr', {}, h('td', {}, 'Omzet penjualan'), h('td', {}, rp(r.revenue))),
-        h('tr', {}, h('td', {}, 'Modal barang terjual'), h('td', {}, '− ' + rp(r.cogs))),
-        h('tr', {}, h('td', {}, 'Laba kotor'), h('td', {}, rp(r.grossProfit))),
-        h('tr', {}, h('td', {}, 'Sewa toko'), h('td', {}, '− ' + rp(r.rent))),
-        h('tr', {}, h('td', {}, h('b', {}, 'Laba bersih')), h('td', {}, h('b', {}, rp(r.net))))),
+      h('table', {}, rows.map(([a, b]) => h('tr', {}, h('td', {}, a), h('td', {}, b))),
+        h('tr', {}, h('td', {}, h('b', {}, 'Laba operasional')), h('td', {}, h('b', {}, rp(r.net))))),
+      r.propIncome ? h('div', { class: 'sub good' }, `+ Sewa properti ${rp(r.propIncome)}`) : null,
+      r.depositReturn ? h('div', { class: 'sub good' }, `+ Deposito cair ${rp(r.depositReturn)} (bunga ${rp(r.depositInterest)})`) : null,
+      r.loanPaid ? h('div', { class: 'sub' }, `− Cicilan bank ${rp(r.loanPaid)}`) : null,
       h('div', { class: 'sub' }, `Pelanggan ${r.served}/${r.customers} terlayani · terjual ${r.soldUnits} unit · reputasi ${r.repDelta >= 0 ? '+' : ''}${r.repDelta}`),
-      r.arrears > 0 ? h('div', { class: 'sub bad' }, `Tunggakan sewa: ${rp(r.arrears)}`) : null);
+      r.arrears > 0 ? h('div', { class: 'sub bad' }, `Tunggakan sewa/gaji: ${rp(r.arrears)}`) : null);
   }
 
   showDaySummary(summary) {
-    this.openSheet(`🌙 Hari ${summary.day} selesai`, () => [
-      this.summaryCard(summary, 'Ringkasan hari ini'),
-      h('div', { class: 'card' }, `Kas sekarang: ${rp(summary.endCash)}. Belanja stok dan sesuaikan harga untuk besok.`),
-      h('div', { class: 'row' },
-        h('button', { class: 'btn grow', onClick: () => { this.closeModal(); this.openGrosir(); } }, '🛒 Belanja stok'),
-        h('button', { class: 'btn secondary grow', onClick: () => this.closeModal() }, 'Tutup')),
-    ]);
-    this.refreshHud();
-  }
-
-  // ---------- Upgrade ----------
-  openUpgrade() {
-    this.openSheet('⚙️ Upgrade Toko', () => {
+    this.openSheet(`🌙 Hari ${summary.day} selesai`, () => {
       const e = this.e;
-      return UPGRADES.map((u) => {
-        const lvl = e.state.upgrades[u.id];
-        const cost = e.upgradeCost(u.id);
-        return h('div', { class: 'card' },
-          h('div', { class: 'card-top' }, h('div', { class: 'card-title' }, u.name), h('span', { class: 'badge' }, `Level ${lvl}/${u.costs.length}`)),
-          h('div', { class: 'sub' }, u.desc),
-          h('div', { class: 'meter' }, h('i', { style: `width:${(lvl / u.costs.length) * 100}%` })),
-          cost === null
-            ? h('div', { class: 'sub good' }, 'Level maksimum')
-            : h('button', { class: 'btn', disabled: !(e.state.ledger.balance >= cost), onClick: () => this.act(() => e.buyUpgrade(u.id), `${u.name} naik level!`) }, `Upgrade · ${rp(cost)}`));
-      });
+      const out = [];
+      if (summary.starUp) {
+        const perk = STAR_PERKS[summary.starUp.to - 1];
+        out.push(h('div', { class: 'card hero' },
+          h('div', { class: 'card-title' }, `⭐ Naik bintang ${summary.starUp.to}: ${perk.title}!`),
+          h('div', { class: 'sub' }, perk.text.map((t) => `• ${t}`).join('\n'))));
+      }
+      out.push(this.summaryCard(summary, 'Ringkasan hari ini'));
+      if (summary.restock?.length) out.push(h('div', { class: 'card' }, h('b', {}, '📋 Penjaga Stok'), h('div', { class: 'sub' }, summary.restock.map((r) => `${r.n} ${getItem(r.itemId).name}`).join(', '))));
+      const hints = [];
+      const low = e.lowStock();
+      if (low.length) hints.push(`⚠ Stok menipis: ${low.map((l) => getItem(l.itemId).name).join(', ')}`);
+      const ready = e.state.breeding.filter((b) => e.state.day >= b.ready).length;
+      if (ready) hints.push(`🐣 ${ready} breeding siap diambil`);
+      if (e.skillPointsFree() > 0) hints.push(`🌳 ${e.skillPointsFree()} poin skill belum dipakai`);
+      hints.push(`${e.mods().event.icon} Besok: ${e.mods().event.name}`);
+      out.push(h('div', { class: 'card' }, `Kas sekarang: ${rp(summary.endCash)}`, hints.map((t) => h('div', { class: 'sub' }, t))));
+      out.push(h('div', { class: 'row' },
+        h('button', { class: 'btn grow', onClick: () => { this.closeModal(); this.openGrosir(); } }, '🛒 Belanja stok'),
+        h('button', { class: 'btn secondary grow', onClick: () => this.closeModal() }, 'Tutup')));
+      return out;
     });
+    this.refreshHud();
   }
 
   // ---------- Menu ----------
@@ -346,8 +441,16 @@ export class UI {
         if (f) ta.value = await f.text();
       } });
       return [
+        h('div', { class: 'card' }, h('b', {}, 'Cara bermain'),
+          h('div', { class: 'sub', style: 'white-space:pre-line' }, [
+            '1. Belanja stok di Grosir, atur harga di Harga.',
+            '2. Tekan Buka Toko: pelanggan datang, memilih, antre, bayar.',
+            '3. Reputasi naik jika pelanggan puas. Naik bintang membuka fitur baru.',
+            '4. Perluas toko untuk membuka kategori hewan, buka spesies baru di Daftar Hewan.',
+            '5. Pakai skill, ramuan, dan karyawan. Hati-hati dengan utang dan sewa.',
+          ].join('\n'))),
         h('div', { class: 'card' }, h('b', {}, 'Simpan'),
-          h('div', { class: 'sub' }, 'Game tersimpan otomatis di perangkat setiap kali toko tutup. Hari yang sedang berjalan tidak disimpan.'),
+          h('div', { class: 'sub' }, 'Tersimpan otomatis di perangkat setiap toko tutup. Hari yang sedang berjalan tidak disimpan.'),
           h('button', { class: 'btn', onClick: () => { this.ctx.persist(true); toast('Tersimpan', 'ok'); } }, '💾 Simpan sekarang')),
         h('div', { class: 'card' }, h('b', {}, 'Cadangan (ekspor / impor)'),
           h('button', { class: 'btn secondary', onClick: () => this.ctx.exportFile() }, '⬇️ Unduh berkas simpanan'),
@@ -367,10 +470,10 @@ export class UI {
           h('button', { class: 'btn danger', disabled: e.state.phase === 'open', onClick: () => {
             if (confirm('Hapus progres dan mulai game baru? Ini tidak bisa dibatalkan.')) { this.ctx.newGame(); this.closeModal(); }
           } }, '🗑️ Mulai game baru')),
-        h('div', { class: 'sub', style: 'text-align:center' }, `Fajmuls Simulator v0.1 · 1 hari = ${DAY_LENGTH_SEC}s pada 1x`),
+        h('div', { class: 'sub', style: 'text-align:center' }, `Pasar Satwa by Fajmuls · v2.0 · 1 hari = ${DAY_LENGTH_SEC}s pada 1x`),
       ];
     });
   }
 }
 
-export { lotKey };
+export { parseLotKey };

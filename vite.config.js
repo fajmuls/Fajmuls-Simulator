@@ -8,9 +8,9 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Fajmuls Simulator',
-        short_name: 'Fajmuls',
-        description: 'Game simulator toko: belanja, jual, dan kembangkan tokomu.',
+        name: 'Pasar Satwa by Fajmuls',
+        short_name: 'Pasar Satwa',
+        description: 'Game simulator toko hewan: belanja, jual, breeding, investasi, dan kembangkan pasarmu.',
         lang: 'id',
         start_url: './',
         scope: './',
