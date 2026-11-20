@@ -6,6 +6,18 @@ import { SaveManager, serialize, deserialize } from './core/save.js';
 import { ShopScene, W, H } from './game/ShopScene.js';
 import { UI, toast, h } from './ui.js';
 import './screens.js';
+import { audio } from './audio.js';
+
+const loadStart = performance.now();
+function finishLoading() {
+  const el = document.getElementById('loader');
+  if (!el) return;
+  const wait = Math.max(0, 1800 - (performance.now() - loadStart));
+  setTimeout(() => {
+    el.classList.add('ready');
+    setTimeout(() => { el.classList.add('done'); setTimeout(() => el.remove(), 500); }, 280);
+  }, wait);
+}
 
 async function boot() {
   const saves = new SaveManager();
@@ -64,11 +76,19 @@ async function boot() {
 
   ui = new UI(ctx);
 
+  // Suara baru boleh menyala setelah ada sentuhan pertama; klik tombol berbunyi pelan.
+  const firstTouch = () => { audio.unlock(); };
+  window.addEventListener('pointerdown', firstTouch, { once: true });
+  document.addEventListener('click', (ev) => { if (ev.target.closest?.('button, .chip, .tile') && !ev.target.closest('.qbtn')) audio.play('click'); });
+  document.addEventListener('visibilitychange', () => audio.suspend(document.hidden));
+
   const shop = new ShopScene(engine, {
     onReady: (s) => {
       scene = s;
       ui.refreshHud();
+      finishLoading();
     },
+    onSale: () => audio.play('coin'),
     onTick: (tick) => ui.refreshHud(tick),
     onDayEnd: (summary) => {
       persist();

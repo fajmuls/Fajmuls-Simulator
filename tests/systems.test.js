@@ -50,7 +50,7 @@ describe('harga pasar semua', () => {
     const e = rich();
     e.buyStock('cacing', 3, 10);
     e.setAutoPrice(true, -10);
-    e.setPrice('cacing', 3, 3000);
+    e.setPrice('cacing', 3, 2000);
     e.startDay();
     expect(e.priceOf('cacing', 3)).toBe(e.marketPrice('cacing', 3, -10));
   });
@@ -193,7 +193,7 @@ describe('karyawan', () => {
     const cash = e.state.ledger.balance;
     const s = runDay(e);
     expect(s.wages).toBe(8000);
-    expect(e.state.ledger.balance).toBe(cash - s.rent - 8000);
+    expect(e.state.ledger.balance).toBe(cash - s.rent - 8000 - s.upkeep - s.tax);
 
     const poor = rich(1, 3, 5000);
     poor.hire('kasir');
@@ -341,7 +341,7 @@ describe('investasi', () => {
     const cash = e.state.ledger.balance;
     const s = runDay(e);
     expect(s.propIncome).toBe(2400);
-    expect(e.state.ledger.balance).toBe(cash + 2400 - s.rent);
+    expect(e.state.ledger.balance).toBe(cash + 2400 - s.rent - s.upkeep - s.tax);
     const before = e.state.ledger.balance;
     e.sellProperty('kios');
     expect(e.state.ledger.balance).toBe(before + 160000);
@@ -417,7 +417,9 @@ describe('migrasi simpanan versi 1', () => {
   it('memuat simpanan lama tanpa kehilangan stok, upgrade, dan spesies', () => {
     const old = v1State();
     const loaded = deserialize(serialize(old));
-    expect(loaded.v).toBe(2);
+    expect(loaded.v).toBe(3);
+    expect(loaded.stats.items).toEqual({});
+    expect(loaded.upgrades.kecepatan).toBe(0);
     expect(loaded.stock['mas:3'].qty).toBe(4);
     expect(loaded.upgrades.rak).toBe(1);
     expect(loaded.upgrades.supplier).toBe(1);
@@ -438,5 +440,104 @@ describe('migrasi simpanan versi 1', () => {
     const copy = structuredClone(old);
     migrate(old);
     expect(old).toEqual(copy);
+  });
+});
+
+describe('v3: kecepatan, pengeluaran, karyawan baru', () => {
+  const mk = (seed = 1, stars = 3, cash = 2000000) => {
+    const e = new GameEngine(newState(seed));
+    e.state.stars = stars;
+    e.state.reputation = [0, 15, 35, 60, 85][stars - 1] + 1;
+    e.state.ledger.opening = cash;
+    e.state.ledger.balance = cash;
+    return e;
+  };
+
+  it('kecepatan 4x dan 8x harus dibeli', () => {
+    const e = mk();
+    expect(e.maxSpeed()).toBe(2);
+    e.buyUpgrade('kecepatan');
+    expect(e.maxSpeed()).toBe(4);
+    e.buyUpgrade('kecepatan');
+    expect(e.maxSpeed()).toBe(8);
+    expect(() => e.buyUpgrade('kecepatan')).toThrow();
+  });
+
+  it('migrasi v2 menambah upgrade dan statistik baru tanpa mengubah data lama', () => {
+    const e = mk();
+    e.buyStock('cacing', 3, 5);
+    const v2 = structuredClone(e.state);
+    v2.v = 2;
+    delete v2.upgrades.kecepatan;
+    delete v2.upgrades.renovasi;
+    delete v2.stats.items;
+    const copy = structuredClone(v2);
+    const m = migrate(v2);
+    expect(v2).toEqual(copy);
+    expect(m.v).toBe(3);
+    expect(m.upgrades.kecepatan).toBe(0);
+    expect(m.stats.items).toEqual({});
+    expect(m.stock['cacing:3'].qty).toBe(5);
+    expect(validateState(m)).toEqual([]);
+  });
+
+  it('pajak progresif dan perawatan dibayar tiap hari, audit tetap sehat', () => {
+    const e = mk();
+    expect(e.taxFor(50000)).toBe(0);
+    expect(e.taxFor(100000)).toBe(2000);
+    expect(e.taxFor(300000)).toBe(Math.floor(140000 * 0.05 + 100000 * 0.09));
+    expect(e.wealthTax()).toBe(Math.floor((2000000 - 1500000) * 0.003));
+    e.unlockSpecies('mas');
+    e.buyStock('mas', 3, 10);
+    expect(e.animalCount()).toBe(10);
+    expect(e.upkeep()).toBe(60);
+    const s = runDay(e);
+    expect(s.upkeep).toBeGreaterThanOrEqual(0);
+    expect(s.tax).toBeGreaterThan(0);
+    expect(auditLedger(e.state.ledger)).toEqual([]);
+  });
+
+  it('obat mencegah hewan mati, tanpa obat sebagian bisa mati dan modalnya hilang dari stok', () => {
+    const e = mk(7);
+    e.state.day = 10;
+    e.state.stock['lele:3'] = { qty: 500, cost: 500 * 1000 };
+    e.state.buffs.obat = 2;
+    expect(e._applySickness(10)).toEqual([]);
+    delete e.state.buffs.obat;
+    const died = e._applySickness(10);
+    const n = died.reduce((a, b) => a + b.n, 0);
+    expect(n).toBeGreaterThan(0);
+    expect(e.state.stock['lele:3'].qty).toBe(500 - n);
+    expect(e.state.stock['lele:3'].cost).toBe(Math.round((500000 * (500 - n)) / 500));
+  });
+
+  it('satpam menurunkan pencurian, tidak ada pencurian sebelum hari 5', () => {
+    const base = () => { const e = mk(3, 2); e.state.stock['cacing:3'] = { qty: 5000, cost: 5000 * 400 }; return e; };
+    const a = base();
+    const b = base();
+    b.hire('satpam');
+    const ta = a._applyTheft(20, 400).reduce((x, y) => x + y.n, 0);
+    const tb = b._applyTheft(20, 400).reduce((x, y) => x + y.n, 0);
+    expect(ta).toBeGreaterThan(tb);
+    expect(a._applyTheft(4, 400)).toEqual([]);
+  });
+
+  it('badut menambah pelanggan dan renovasi butuh toko level 4', () => {
+    const e = mk();
+    const before = e.mods().count;
+    e.hire('badut');
+    expect(e.mods().count).toBeCloseTo(before * 1.15, 5);
+    expect(e.upgradeAvailable('renovasi')).toBe(false);
+    e.state.shopLevel = 4;
+    expect(e.upgradeAvailable('renovasi')).toBe(true);
+  });
+
+  it('statistik per spesies tercatat saat penjualan', () => {
+    const e = mk(5, 1, 50000);
+    e.buyStock('cacing', 3, 30);
+    runDay(e);
+    const st = e.state.stats.items.cacing;
+    expect(st.units).toBeGreaterThan(0);
+    expect(st.revenue).toBeGreaterThan(0);
   });
 });

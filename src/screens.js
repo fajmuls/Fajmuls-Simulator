@@ -3,7 +3,7 @@ import {
   STAR_PERKS, STAR_THRESH, DEPOSIT_TERMS, DEPOSIT_MIN, LOAN_TERMS, LOAN_MIN, LOAN_STEP, PROPERTY_SELL_RATE,
   getItem, getQuality, getUpgrade, getSkill, getShare, getProperty, itemsOf,
 } from './core/catalog.js';
-import { UI, h, rp, rpShort, starsText, qStars, CAT_EMOJI } from './ui.js';
+import { UI, h, rp, rpShort, starsText, qStars, CAT_EMOJI, iname } from './ui.js';
 
 const P = UI.prototype;
 
@@ -48,7 +48,7 @@ P.openSpesies = function openSpesies() {
               : st.state === 'urut' ? h('span', { class: 'sub' }, `Buka ${getItem(st.prev).name} dulu`)
                 : h('span', { class: 'sub' }, '🔒');
           return h('div', { class: 'row', style: 'justify-content:space-between' },
-            h('div', {}, h('div', { class: 'card-title' }, `Tier ${it.tier} · ${it.name}`), h('div', { class: 'sub' }, `Grosir ±${rp(it.wholesale)} · Jual ±${rp(it.retail)}`)),
+            h('div', {}, h('div', { class: 'card-title' }, `Tier ${it.tier} · ${iname(it)}`), h('div', { class: 'sub' }, `Grosir ±${rp(it.wholesale)} · Jual ±${rp(it.retail)}`)),
             right);
         })));
     }
@@ -124,7 +124,7 @@ P.openUpgrade = function openUpgrade() {
         h('div', { class: 'card-top' }, h('b', {}, u.name), h('span', { class: 'badge' }, `Lv ${lvl}/${u.costs.length}`)),
         h('div', { class: 'sub' }, u.desc),
         h('button', { class: 'btn small', disabled: !avail || cost === null || s.ledger.balance < cost || s.phase === 'open', onClick: () => this.act(() => e.buyUpgrade(u.id), `${u.name} naik`) },
-          !avail ? '🔒 Buka kategori dulu' : cost === null ? 'Maksimum' : `Upgrade · ${rp(cost)}`)));
+          !avail ? '🔒 Syarat belum terpenuhi (kategori/level toko)' : cost === null ? 'Maksimum' : `Upgrade · ${rp(cost)}`)));
     }
     return out;
   });
@@ -172,7 +172,7 @@ P.openKaryawan = function openKaryawan() {
         const target = h('input', { type: 'number', min: 0, max: 500, value: rule ? rule.target : 0, inputMode: 'numeric', style: 'width:70px' });
         const q = h('select', {}, [1, 2, 3, 4, 5].filter((n) => n <= e.maxQuality()).map((n) => h('option', { value: n, selected: (rule ? rule.q : Math.min(3, e.maxQuality())) === n }, getQuality(n).name)));
         out.push(h('div', { class: 'card' },
-          h('div', { class: 'card-top' }, h('b', {}, `${CAT_EMOJI[it.cat]} ${it.name}`), h('span', { class: 'sub' }, `stok ${e.totalQty(it.id)}`)),
+          h('div', { class: 'card-top' }, h('b', {}, iname(it)), h('span', { class: 'sub' }, `stok ${e.totalQty(it.id)}`)),
           h('div', { class: 'row' }, h('span', { class: 'sub' }, 'Target'), target, h('div', { class: 'grow' }, q),
             h('button', { class: 'btn small', onClick: () => this.act(() => e.setRestock(it.id, Math.floor(Number(target.value) || 0), Number(q.value)), 'Aturan disimpan') }, 'Simpan'))));
       }
@@ -193,7 +193,7 @@ P.openBreeding = function openBreeding() {
     for (const b of s.breeding) {
       const left = b.ready - s.day;
       out.push(h('div', { class: 'card' },
-        h('div', { class: 'card-top' }, h('b', {}, `${getItem(b.itemId).name} ${qStars(getQuality(b.quality).stars)}`), h('span', { class: 'badge' }, left > 0 ? `${left} hari lagi` : '✔ Siap')),
+        h('div', { class: 'card-top' }, h('b', {}, `${iname(getItem(b.itemId))} ${qStars(getQuality(b.quality).stars)}`), h('span', { class: 'badge' }, left > 0 ? `${left} hari lagi` : '✔ Siap')),
         h('div', { class: 'sub' }, `${b.offspring.length} anakan`),
         h('button', { class: 'btn small', disabled: left > 0 || s.phase === 'open', onClick: () => this.act(() => e.collectBreeding(b.id), (r) => `Dapat ${r.length} anakan + 2 induk kembali`) }, 'Ambil')));
     }
@@ -204,7 +204,7 @@ P.openBreeding = function openBreeding() {
       for (const l of cands) {
         const fee = Math.max(1, Math.round(e.wholesalePrice(l.itemId, l.quality) * 2 * 0.25));
         out.push(h('div', { class: 'card' },
-          h('div', { class: 'card-top' }, h('b', {}, `${getItem(l.itemId).name} ${qStars(getQuality(l.quality).stars)}`), h('span', { class: 'sub' }, `stok ${l.qty}`)),
+          h('div', { class: 'card-top' }, h('b', {}, `${iname(getItem(l.itemId))} ${qStars(getQuality(l.quality).stars)}`), h('span', { class: 'sub' }, `stok ${l.qty}`)),
           h('button', { class: 'btn small', disabled: s.ledger.balance < fee || s.phase === 'open', onClick: () => this.act(() => e.startBreeding(l.itemId, l.quality), (r) => `Breeding dimulai, matang hari ${r.ready}`) }, `Mulai · ${rp(fee)}`)));
       }
     }

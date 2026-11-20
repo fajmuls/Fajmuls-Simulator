@@ -131,7 +131,7 @@ describe('engine: hari berjalan', () => {
     e.endDay();
     expect(e.state.stock['cacing:3'].qty).toBe(30);
     expect(e.state.stock['cacing:3'].cost).toBe(e.wholesalePrice('cacing', 3, 1) * 30);
-    expect(e.state.ledger.balance).toBe(cash - 3000);
+    expect(e.state.ledger.balance).toBe(cash - 1800);
   });
 
   it('sewa yang tak terbayar menjadi tunggakan, saldo tidak pernah negatif', () => {
@@ -141,7 +141,7 @@ describe('engine: hari berjalan', () => {
     const s = runDay(e);
     expect(e.state.ledger.balance).toBeGreaterThanOrEqual(0);
     expect(e.state.arrears).toBeGreaterThan(0);
-    expect(s.rent).toBe(3000);
+    expect(s.rent).toBe(1800);
     expect(auditLedger(e.state.ledger)).toEqual([]);
   });
 
@@ -182,7 +182,7 @@ describe('engine: audit simulasi 200 hari dengan semua sistem', () => {
         for (let k = 0; k < 3; k++) for (const sk of ['tawar', 'promosi', 'gudang', 'breeder', 'bibit_unggul', 'harga_prima']) tryDo(() => e.learnSkill(sk));
         tryDo(() => { if (s.ledger.balance > 30000) e.buyPotion('pemikat'); });
         tryDo(() => e.activatePotion('pemikat'));
-        for (const id of ['kasir', 'pramuniaga', 'penjaga', 'perawat']) tryDo(() => { if (s.ledger.balance > 60000) e.hire(id); });
+        for (const id of ['kasir', 'pramuniaga', 'penjaga', 'perawat', 'satpam', 'badut']) tryDo(() => { if (s.ledger.balance > 60000) e.hire(id); });
         tryDo(() => { if (s.loans.length === 0 && d % 20 === 5) e.takeLoan(20000, 1); });
         for (const l of s.loans.slice()) tryDo(() => { if (s.ledger.balance > l.remaining + 50000) e.repayLoan(l.id, l.remaining); });
         tryDo(() => { if (s.ledger.balance > 120000) e.openDeposit(20000, d % 3); });

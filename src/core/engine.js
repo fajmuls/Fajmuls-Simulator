@@ -4,6 +4,7 @@ import {
   SHARE_MIN_PRICE, SHARE_SELL_FEE, SHARE_HISTORY, PROPERTY_SELL_RATE, LOAN_TERMS, LOAN_MIN, LOAN_STEP,
   LOAN_MAX_ACTIVE, LOAN_LATE_FEE, BREED_FEE_RATE, BREED_BASE_SLOTS, SKILL_POINT_EVERY_DAYS,
   BASE_CAPACITY, CAPACITY_PER_RAK, BASE_MAX_QUALITY, START_CASH, DAILY_RENT,
+  SPEED_STEPS, UPKEEP_PER_ANIMAL, UPKEEP_SHOP_STEP, SICK_CHANCE, THEFT_CHANCE, TAX_BRACKETS, WEALTH_TAX_FROM, WEALTH_TAX_RATE,
   getItem, getCategory, getQuality, getUpgrade, getSkill, getPotion, getStaff, getShare, getProperty,
   lotKey, parseLotKey, starsFor,
 } from './catalog.js';
@@ -11,7 +12,7 @@ import { createLedger, credit, debit, sumByType } from './ledger.js';
 import { mulberry32, hashSeed, pickWeighted } from './rng.js';
 
 export const DAY_LENGTH_SEC = 60; // lama jendela pelanggan datang pada kecepatan 1x
-export const STATE_VERSION = 2;
+export const STATE_VERSION = 3;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -62,7 +63,7 @@ export function newState(seed = Date.now() % 2147483647) {
     reputation: 10,
     stars: 1,
     arrears: 0, // tunggakan sewa dan gaji
-    stats: { revenue: 0, customers: 0, bestDay: 0 },
+    stats: { revenue: 0, customers: 0, bestDay: 0, items: {} },
     history: [],
   };
 }
@@ -71,10 +72,20 @@ export function newState(seed = Date.now() % 2147483647) {
 export function migrate(input) {
   if (!input || typeof input !== 'object') return input;
   if (input.v === STATE_VERSION) return input;
-  if (input.v !== 1) return input;
+  if (input.v === 1) return migrate(migrateV1(input));
+  if (input.v !== 2) return input;
   const s = structuredClone(input);
   const base = newState(s.seed);
-  s.v = STATE_VERSION;
+  s.v = 3;
+  s.upgrades = { ...base.upgrades, ...s.upgrades };
+  s.stats = { ...base.stats, ...s.stats, items: s.stats?.items || {} };
+  return s;
+}
+
+function migrateV1(input) {
+  const s = structuredClone(input);
+  const base = newState(s.seed);
+  s.v = 2;
   const upgrades = { ...base.upgrades };
   for (const [k, v] of Object.entries(s.upgrades || {})) if (k in upgrades) upgrades[k] = v;
   s.upgrades = upgrades;
@@ -160,7 +171,7 @@ export class GameEngine {
     const up = (id) => s.upgrades[id] || 0;
     const bf = (id) => (s.buffs[id] || 0) > 0;
     const hasStaff = (id) => !!s.staff[id];
-    const count = P.count * (1 + 0.12 * up('dekorasi')) * (1 + 0.08 * sk('promosi')) * (bf('pemikat') ? 1.3 : 1) * (hasStaff('pramuniaga') ? 1.1 : 1) * ev.count;
+    const count = P.count * (1 + 0.12 * up('dekorasi')) * (1 + 0.08 * sk('promosi')) * (bf('pemikat') ? 1.3 : 1) * (hasStaff('pramuniaga') ? 1.1 : 1) * (hasStaff('badut') ? 1.15 : 1) * (1 + 0.1 * up('renovasi')) * ev.count;
     const disc = Math.min(0.5, P.disc + 0.03 * sk('tawar') + 0.03 * up('member') + (bf('borong') ? 0.12 : 0));
     const wtp = P.wtp + 0.04 * sk('harga_prima') + (bf('hartawan') ? 0.15 : 0) + ev.wtp;
     const vip = P.vip * (1 + 0.2 * sk('vipmagnet')) * (bf('vip') ? 2 : 1) * ev.vip;
@@ -190,7 +201,7 @@ export class GameEngine {
     if (this._marketCache.has(day)) return this._marketCache.get(day);
     const rng = mulberry32(hashSeed(this.state.seed, 'market', day));
     const f = {};
-    for (const it of ITEMS) f[it.id] = { wf: 0.88 + rng() * 0.24, rf: 0.88 + rng() * 0.24 };
+    for (const it of ITEMS) f[it.id] = { wf: 0.9 + rng() * 0.2, rf: 0.94 + rng() * 0.12 };
     this._marketCache.set(day, f);
     return f;
   }
@@ -295,6 +306,7 @@ export class GameEngine {
 
   upgradeAvailable(id) {
     const u = getUpgrade(id);
+    if (u.needShop && this.state.shopLevel < u.needShop) return false;
     return !u.needCat || this.categoryOpen(u.needCat);
   }
 
@@ -306,12 +318,16 @@ export class GameEngine {
 
   buyUpgrade(id) {
     this._requireIdle();
-    if (!this.upgradeAvailable(id)) throw new Error('Buka kategori terkait dulu');
+    if (!this.upgradeAvailable(id)) throw new Error('Syarat upgrade belum terpenuhi (kategori atau level toko)');
     const cost = this.upgradeCost(id);
     if (cost === null) throw new Error('Upgrade sudah level maksimum');
     debit(this.state.ledger, this.state.day, 'upgrade', cost, `Upgrade ${getUpgrade(id).name}`);
     this.state.upgrades[id] = (this.state.upgrades[id] || 0) + 1;
     return cost;
+  }
+
+  maxSpeed() {
+    return SPEED_STEPS[Math.min(SPEED_STEPS.length - 1, this.state.upgrades.kecepatan || 0)];
   }
 
   // ---------- Skill ----------
@@ -739,7 +755,7 @@ export class GameEngine {
 
   customerCount() {
     const s = this.state;
-    const base = 8 + s.reputation * 0.15 + Math.min(s.day, 60) * 0.2;
+    const base = 10 + s.reputation * 0.15 + Math.min(s.day, 60) * 0.2;
     return clamp(Math.round(base * this.mods().count * this.priceAttract()), 3, 50);
   }
 
@@ -767,7 +783,7 @@ export class GameEngine {
         const pick = pickWeighted(rng, pool);
         pool.splice(pool.findIndex((p) => p.id === pick.id), 1);
         const cap = Math.min(type.maxQty, this._qtyCap(getItem(pick.id)));
-        wants.push({ itemId: pick.id, qty: 1 + Math.floor(rng() * cap), noise: 0.95 + rng() * 0.3 });
+        wants.push({ itemId: pick.id, qty: 1 + Math.floor(rng() * cap), noise: 0.96 + rng() * 0.14 });
       }
       return { id: `${s.day}-${i + 1}`, type: type.id, spawnAt: t, wants };
     });
@@ -840,6 +856,13 @@ export class GameEngine {
     this.today.revenue += total;
     this.today.cogs += cogs;
     this.today.soldUnits += units;
+    const items = this.state.stats.items;
+    for (const r of list) {
+      const id = parseLotKey(r.key).itemId;
+      const st = (items[id] ||= { units: 0, revenue: 0 });
+      st.units += r.qty;
+      st.revenue += r.revenue;
+    }
     this.reserved.delete(customerId);
     return total;
   }
@@ -886,6 +909,10 @@ export class GameEngine {
       this.reserved.delete(id);
     }
 
+    // Kerugian stok: hewan sakit/mati dan pencurian (nilai modal keluar dari stok, tidak menyentuh kas).
+    const died = this._applySickness(day);
+    const stolen = this._applyTheft(day, this.today.customers);
+
     // Pemasukan pasif lebih dulu: properti dan deposito yang jatuh tempo.
     const propIncome = this.propertyIncome();
     if (propIncome > 0) credit(s.ledger, day, 'rent_income', propIncome, 'Pendapatan sewa properti');
@@ -914,6 +941,12 @@ export class GameEngine {
       wagesPaid += paid;
       s.arrears += st.wage - paid;
     }
+    const upkeepDue = this.upkeep();
+    const upkeepPaid = this._payUpTo('upkeep', upkeepDue, 'Perawatan hewan dan toko');
+    s.arrears += upkeepDue - upkeepPaid;
+    const taxDue = this.taxFor(this.today.revenue) + this.wealthTax();
+    const taxPaid = this._payUpTo('tax', taxDue, 'Pajak toko');
+    s.arrears += taxDue - taxPaid;
     let loanPaid = 0;
     let anyLate = false;
     s.loans = s.loans.filter((l) => {
@@ -933,7 +966,7 @@ export class GameEngine {
     // Reputasi dan bintang (bintang tidak pernah turun)
     const t = this.today;
     // Reputasi naik pelan dan makin sulit mendekati 100. Disimpan dengan satu desimal.
-    const rawDelta = t.served * 0.16 * m.repGain * (1 - s.reputation / 140) - t.lost * 0.1 * m.repLoss - (anyLate ? 2 : 0);
+    const rawDelta = t.served * 0.13 * m.repGain * (1 - s.reputation / 140) - t.lost * 0.1 * m.repLoss - (anyLate ? 2 : 0);
     const floorRep = Math.max(5, STAR_THRESH[s.stars - 1]);
     const newRep = clamp(Math.round((s.reputation + rawDelta) * 10) / 10, floorRep, 100);
     const repDelta = Math.round((newRep - s.reputation) * 10) / 10;
@@ -957,7 +990,11 @@ export class GameEngine {
       grossProfit: t.revenue - t.cogs,
       rent: m.rent,
       wages: wagesDue,
-      net: t.revenue - t.cogs - m.rent - wagesDue,
+      net: t.revenue - t.cogs - m.rent - wagesDue - upkeepDue - taxDue,
+      upkeep: upkeepDue,
+      tax: taxDue,
+      died,
+      stolen,
       propIncome,
       depositReturn,
       depositInterest,
@@ -990,6 +1027,79 @@ export class GameEngine {
     this.today = null;
     this.lastRestock = [];
     return summary;
+  }
+
+  // ---------- Pengeluaran: perawatan, pajak, sakit, pencurian ----------
+  animalCount() {
+    let n = 0;
+    for (const [key, lot] of Object.entries(this.state.stock)) if (getCategory(getItem(parseLotKey(key).itemId).cat).animal) n += lot.qty;
+    return n;
+  }
+
+  upkeep() {
+    const s = this.state;
+    const base = this.animalCount() * UPKEEP_PER_ANIMAL * (1 + UPKEEP_SHOP_STEP * (s.shopLevel - 1));
+    return Math.round(base * (s.staff.perawat ? 0.7 : 1));
+  }
+
+  taxFor(revenue) {
+    let tax = 0;
+    for (let i = 0; i < TAX_BRACKETS.length; i++) {
+      const lo = TAX_BRACKETS[i].from;
+      const hi = i + 1 < TAX_BRACKETS.length ? TAX_BRACKETS[i + 1].from : Infinity;
+      if (revenue > lo) tax += (Math.min(revenue, hi) - lo) * TAX_BRACKETS[i].rate;
+    }
+    return Math.floor(tax);
+  }
+
+  wealthTax() {
+    const over = this.state.ledger.balance - WEALTH_TAX_FROM;
+    return over > 0 ? Math.floor(over * WEALTH_TAX_RATE) : 0;
+  }
+
+  _removeUnits(key, qty) {
+    const lot = this.state.stock[key];
+    const costOut = qty === lot.qty ? lot.cost : Math.round((lot.cost * qty) / lot.qty);
+    lot.qty -= qty;
+    lot.cost -= costOut;
+    if (lot.qty === 0) lot.cost = 0;
+  }
+
+  _applySickness(day) {
+    const s = this.state;
+    if ((s.buffs.obat || 0) > 0 || day < 3) return [];
+    const p = SICK_CHANCE * (s.staff.perawat ? 0.4 : 1);
+    const rng = mulberry32(hashSeed(s.seed, 'sick', day));
+    const out = {};
+    for (const [key, lot] of Object.entries(s.stock)) {
+      const itemId = parseLotKey(key).itemId;
+      if (!getCategory(getItem(itemId).cat).animal || lot.qty <= 0) continue;
+      let dead = 0;
+      for (let i = 0; i < lot.qty; i++) if (rng() < p) dead += 1;
+      if (dead > 0) {
+        this._removeUnits(key, dead);
+        out[itemId] = (out[itemId] || 0) + dead;
+      }
+    }
+    return Object.entries(out).map(([itemId, n]) => ({ itemId, n }));
+  }
+
+  _applyTheft(day, customers) {
+    const s = this.state;
+    if (day < 5) return [];
+    const p = THEFT_CHANCE * (s.staff.satpam ? 0.2 : 1);
+    const rng = mulberry32(hashSeed(s.seed, 'theft', day));
+    const out = {};
+    for (let i = 0; i < customers; i++) {
+      if (rng() >= p) continue;
+      const lots = Object.entries(s.stock).filter(([, l]) => l.qty > 0);
+      if (!lots.length) break;
+      const [key] = lots[Math.floor(rng() * lots.length)];
+      this._removeUnits(key, 1);
+      const itemId = parseLotKey(key).itemId;
+      out[itemId] = (out[itemId] || 0) + 1;
+    }
+    return Object.entries(out).map(([itemId, n]) => ({ itemId, n }));
   }
 
   canSave() {

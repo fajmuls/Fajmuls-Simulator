@@ -21,34 +21,34 @@ export const CATEGORIES = [
 // Spesies tier N hanya bisa dibuka setelah tier N-1 terbuka.
 export const ITEMS = [
   // Umpan & Pakan
-  { id: 'cacing', name: 'Cacing Tanah', cat: 'perlengkapan', tier: 1, wholesale: 400, retail: 700, demand: 1.0, unlockCost: 0, icon: 'worm' },
-  { id: 'jangkrik', name: 'Jangkrik', cat: 'perlengkapan', tier: 2, wholesale: 600, retail: 1000, demand: 0.8, unlockCost: 0, icon: 'cricket' },
-  { id: 'pelet', name: 'Pelet Ikan', cat: 'perlengkapan', tier: 3, wholesale: 800, retail: 1300, demand: 0.7, unlockCost: 0, icon: 'pellet' },
-  { id: 'voer', name: 'Voer Burung', cat: 'perlengkapan', tier: 4, wholesale: 1000, retail: 1700, demand: 0.6, unlockCost: 0, icon: 'seed' },
+  { id: 'cacing', name: 'Cacing Tanah', cat: 'perlengkapan', tier: 1, wholesale: 400, retail: 550, demand: 1.0, unlockCost: 0, icon: 'worm' },
+  { id: 'jangkrik', name: 'Jangkrik', cat: 'perlengkapan', tier: 2, wholesale: 600, retail: 820, demand: 0.8, unlockCost: 0, icon: 'cricket' },
+  { id: 'pelet', name: 'Pelet Ikan', cat: 'perlengkapan', tier: 3, wholesale: 800, retail: 1070, demand: 0.7, unlockCost: 0, icon: 'pellet' },
+  { id: 'voer', name: 'Voer Burung', cat: 'perlengkapan', tier: 4, wholesale: 1000, retail: 1320, demand: 0.6, unlockCost: 0, icon: 'seed' },
   // Ikan
-  { id: 'lele', name: 'Ikan Lele', cat: 'ikan', tier: 1, wholesale: 1200, retail: 2000, demand: 0.6, unlockCost: 0, icon: 'fish', pal: { a: '#6b7280', b: '#4b5563', w: '#d1d5db' } },
-  { id: 'mas', name: 'Ikan Mas', cat: 'ikan', tier: 2, wholesale: 1800, retail: 3000, demand: 0.5, unlockCost: 5000, icon: 'fish', pal: { a: '#f97316', b: '#ea580c', w: '#fed7aa' } },
-  { id: 'cupang', name: 'Ikan Cupang', cat: 'ikan', tier: 3, wholesale: 3000, retail: 5200, demand: 0.4, unlockCost: 15000, icon: 'fish', pal: { a: '#2563eb', b: '#dc2626', w: '#93c5fd' } },
-  { id: 'koi', name: 'Ikan Koi', cat: 'ikan', tier: 4, wholesale: 6000, retail: 9000, demand: 0.25, unlockCost: 40000, icon: 'fish', pal: { a: '#f9fafb', b: '#dc2626', w: '#fecaca' } },
-  { id: 'arwana', name: 'Ikan Arwana', cat: 'ikan', tier: 5, wholesale: 40000, retail: 58000, demand: 0.08, unlockCost: 120000, icon: 'fish', pal: { a: '#f59e0b', b: '#b45309', w: '#fde68a' } },
+  { id: 'lele', name: 'Ikan Lele', cat: 'ikan', tier: 1, wholesale: 1200, retail: 1660, demand: 0.6, unlockCost: 0, icon: 'fish', pal: { a: '#6b7280', b: '#4b5563', w: '#d1d5db' } },
+  { id: 'mas', name: 'Ikan Mas', cat: 'ikan', tier: 2, wholesale: 1800, retail: 2450, demand: 0.5, unlockCost: 5000, icon: 'fish', pal: { a: '#f97316', b: '#ea580c', w: '#fed7aa' } },
+  { id: 'cupang', name: 'Ikan Cupang', cat: 'ikan', tier: 3, wholesale: 3000, retail: 4000, demand: 0.4, unlockCost: 15000, icon: 'fish', pal: { a: '#2563eb', b: '#dc2626', w: '#93c5fd' } },
+  { id: 'koi', name: 'Ikan Koi', cat: 'ikan', tier: 4, wholesale: 6000, retail: 7900, demand: 0.25, unlockCost: 40000, icon: 'fish', pal: { a: '#f9fafb', b: '#dc2626', w: '#fecaca' } },
+  { id: 'arwana', name: 'Ikan Arwana', cat: 'ikan', tier: 5, wholesale: 40000, retail: 52000, demand: 0.08, unlockCost: 120000, icon: 'fish', pal: { a: '#f59e0b', b: '#b45309', w: '#fde68a' } },
   // Burung
-  { id: 'pipit', name: 'Burung Pipit', cat: 'burung', tier: 1, wholesale: 2500, retail: 4200, demand: 0.5, unlockCost: 0, icon: 'bird', pal: { a: '#a16207', b: '#f59e0b', w: '#fde68a' } },
-  { id: 'perkutut', name: 'Burung Perkutut', cat: 'burung', tier: 2, wholesale: 5000, retail: 8500, demand: 0.4, unlockCost: 8000, icon: 'bird', pal: { a: '#9ca3af', b: '#6b7280', w: '#e5e7eb' } },
-  { id: 'kenari', name: 'Burung Kenari', cat: 'burung', tier: 3, wholesale: 9000, retail: 15500, demand: 0.3, unlockCost: 25000, icon: 'bird', pal: { a: '#facc15', b: '#f97316', w: '#fef9c3' } },
-  { id: 'lovebird', name: 'Lovebird', cat: 'burung', tier: 4, wholesale: 16000, retail: 24000, demand: 0.22, unlockCost: 60000, icon: 'bird', pal: { a: '#22c55e', b: '#ef4444', w: '#bbf7d0' } },
-  { id: 'murai', name: 'Murai Batu', cat: 'burung', tier: 5, wholesale: 40000, retail: 58000, demand: 0.12, unlockCost: 150000, icon: 'bird', pal: { a: '#111827', b: '#ea580c', w: '#374151' } },
+  { id: 'pipit', name: 'Burung Pipit', cat: 'burung', tier: 1, wholesale: 2500, retail: 3450, demand: 0.5, unlockCost: 0, icon: 'bird', pal: { a: '#a16207', b: '#f59e0b', w: '#fde68a' } },
+  { id: 'perkutut', name: 'Burung Perkutut', cat: 'burung', tier: 2, wholesale: 5000, retail: 6800, demand: 0.4, unlockCost: 8000, icon: 'bird', pal: { a: '#9ca3af', b: '#6b7280', w: '#e5e7eb' } },
+  { id: 'kenari', name: 'Burung Kenari', cat: 'burung', tier: 3, wholesale: 9000, retail: 12050, demand: 0.3, unlockCost: 25000, icon: 'bird', pal: { a: '#facc15', b: '#f97316', w: '#fef9c3' } },
+  { id: 'lovebird', name: 'Lovebird', cat: 'burung', tier: 4, wholesale: 16000, retail: 21100, demand: 0.22, unlockCost: 60000, icon: 'bird', pal: { a: '#22c55e', b: '#ef4444', w: '#bbf7d0' } },
+  { id: 'murai', name: 'Murai Batu', cat: 'burung', tier: 5, wholesale: 40000, retail: 52000, demand: 0.12, unlockCost: 150000, icon: 'bird', pal: { a: '#111827', b: '#ea580c', w: '#374151' } },
   // Reptil
-  { id: 'kura', name: 'Kura-kura Brazil', cat: 'reptil', tier: 1, wholesale: 4000, retail: 7000, demand: 0.4, unlockCost: 0, icon: 'lizard', pal: { a: '#16a34a', b: '#a16207', w: '#bbf7d0' } },
-  { id: 'bunglon', name: 'Bunglon', cat: 'reptil', tier: 2, wholesale: 8000, retail: 14000, demand: 0.3, unlockCost: 20000, icon: 'lizard', pal: { a: '#84cc16', b: '#ea580c', w: '#ecfccb' } },
-  { id: 'gecko', name: 'Gecko Leopard', cat: 'reptil', tier: 3, wholesale: 14000, retail: 24500, demand: 0.25, unlockCost: 50000, icon: 'lizard', pal: { a: '#fbbf24', b: '#78350f', w: '#fef3c7' } },
-  { id: 'ularjagung', name: 'Ular Jagung', cat: 'reptil', tier: 4, wholesale: 26000, retail: 39000, demand: 0.15, unlockCost: 120000, icon: 'lizard', pal: { a: '#ea580c', b: '#7f1d1d', w: '#fed7aa' } },
-  { id: 'iguana', name: 'Iguana Hijau', cat: 'reptil', tier: 5, wholesale: 50000, retail: 72500, demand: 0.08, unlockCost: 280000, icon: 'lizard', pal: { a: '#15803d', b: '#166534', w: '#86efac' } },
+  { id: 'kura', name: 'Kura-kura Brazil', cat: 'reptil', tier: 1, wholesale: 4000, retail: 5500, demand: 0.4, unlockCost: 0, icon: 'lizard', pal: { a: '#16a34a', b: '#a16207', w: '#bbf7d0' } },
+  { id: 'bunglon', name: 'Bunglon', cat: 'reptil', tier: 2, wholesale: 8000, retail: 10900, demand: 0.3, unlockCost: 20000, icon: 'lizard', pal: { a: '#84cc16', b: '#ea580c', w: '#ecfccb' } },
+  { id: 'gecko', name: 'Gecko Leopard', cat: 'reptil', tier: 3, wholesale: 14000, retail: 18750, demand: 0.25, unlockCost: 50000, icon: 'lizard', pal: { a: '#fbbf24', b: '#78350f', w: '#fef3c7' } },
+  { id: 'ularjagung', name: 'Ular Jagung', cat: 'reptil', tier: 4, wholesale: 26000, retail: 34300, demand: 0.15, unlockCost: 120000, icon: 'lizard', pal: { a: '#ea580c', b: '#7f1d1d', w: '#fed7aa' } },
+  { id: 'iguana', name: 'Iguana Hijau', cat: 'reptil', tier: 5, wholesale: 50000, retail: 65000, demand: 0.08, unlockCost: 280000, icon: 'lizard', pal: { a: '#15803d', b: '#166534', w: '#86efac' } },
   // Satwa kecil
-  { id: 'hamster', name: 'Hamster', cat: 'kecil', tier: 1, wholesale: 3000, retail: 5200, demand: 0.5, unlockCost: 0, icon: 'small', pal: { a: '#d6a85a', b: '#92400e', w: '#fef3c7' } },
-  { id: 'kelinci', name: 'Kelinci', cat: 'kecil', tier: 2, wholesale: 6000, retail: 10500, demand: 0.4, unlockCost: 15000, icon: 'rabbit', pal: { a: '#f9fafb', b: '#f9a8d4', w: '#e5e7eb' } },
-  { id: 'marmut', name: 'Marmut', cat: 'kecil', tier: 3, wholesale: 9000, retail: 15500, demand: 0.3, unlockCost: 40000, icon: 'small', pal: { a: '#b45309', b: '#fef3c7', w: '#fde68a' } },
-  { id: 'landak', name: 'Landak Mini', cat: 'kecil', tier: 4, wholesale: 18000, retail: 27000, demand: 0.2, unlockCost: 100000, icon: 'small', pal: { a: '#78716c', b: '#44403c', w: '#d6d3d1' } },
-  { id: 'glider', name: 'Sugar Glider', cat: 'kecil', tier: 5, wholesale: 35000, retail: 50000, demand: 0.12, unlockCost: 250000, icon: 'rabbit', pal: { a: '#94a3b8', b: '#475569', w: '#e2e8f0' } },
+  { id: 'hamster', name: 'Hamster', cat: 'kecil', tier: 1, wholesale: 3000, retail: 4150, demand: 0.5, unlockCost: 0, icon: 'small', pal: { a: '#d6a85a', b: '#92400e', w: '#fef3c7' } },
+  { id: 'kelinci', name: 'Kelinci', cat: 'kecil', tier: 2, wholesale: 6000, retail: 8150, demand: 0.4, unlockCost: 15000, icon: 'rabbit', pal: { a: '#f9fafb', b: '#f9a8d4', w: '#e5e7eb' } },
+  { id: 'marmut', name: 'Marmut', cat: 'kecil', tier: 3, wholesale: 9000, retail: 12050, demand: 0.3, unlockCost: 40000, icon: 'small', pal: { a: '#b45309', b: '#fef3c7', w: '#fde68a' } },
+  { id: 'landak', name: 'Landak Mini', cat: 'kecil', tier: 4, wholesale: 18000, retail: 23800, demand: 0.2, unlockCost: 100000, icon: 'small', pal: { a: '#78716c', b: '#44403c', w: '#d6d3d1' } },
+  { id: 'glider', name: 'Sugar Glider', cat: 'kecil', tier: 5, wholesale: 35000, retail: 45500, demand: 0.12, unlockCost: 250000, icon: 'rabbit', pal: { a: '#94a3b8', b: '#475569', w: '#e2e8f0' } },
 ];
 
 export const CUSTOMER_TYPES = [
@@ -86,11 +86,13 @@ export const SHOP_LEVELS = [
 // ---------- Upgrade toko ----------
 const premium = (cat, name, c1, c2) => ({ id: `prem_${cat}`, name, desc: `Pembeli rela bayar +6% per level untuk kategori ${CATEGORIES.find((x) => x.id === cat).name}.`, costs: [c1, c2], needCat: cat });
 export const UPGRADES = [
-  { id: 'rak', name: 'Rak Lebih Besar', desc: 'Tambah kapasitas stok (+40 unit per level).', costs: [15000, 40000, 90000, 200000] },
+  { id: 'rak', name: 'Rak Lebih Besar', desc: 'Tambah kapasitas stok (+40 unit per level).', costs: [15000, 40000, 90000, 200000, 450000, 900000] },
   { id: 'dekorasi', name: 'Dekorasi Toko', desc: 'Toko lebih menarik: pelanggan +12% per level.', costs: [20000, 55000, 120000, 260000] },
   { id: 'supplier', name: 'Kontrak Supplier', desc: 'Buka kualitas barang lebih tinggi di grosir (+1 kualitas per level).', costs: [30000, 100000] },
   { id: 'kasir_modern', name: 'Mesin Kasir Modern', desc: 'Pembayaran 15% lebih cepat per level.', costs: [12000, 35000, 80000] },
   { id: 'member', name: 'Kartu Member Grosir', desc: 'Diskon belanja grosir 3% per level.', costs: [25000, 70000, 160000] },
+  { id: 'kecepatan', name: 'Mesin Waktu', desc: 'Buka kecepatan permainan: level 1 = 4x, level 2 = 8x.', costs: [60000, 200000] },
+  { id: 'renovasi', name: 'Renovasi Toko', desc: 'Interior megah: pelanggan +10% per level (butuh Toko Lv 4).', costs: [800000, 2200000, 5500000], needShop: 4 },
   premium('ikan', 'Akuarium Premium', 30000, 90000),
   premium('burung', 'Sangkar Premium', 60000, 160000),
   premium('reptil', 'Terarium Premium', 90000, 220000),
@@ -101,7 +103,7 @@ export const BASE_CAPACITY = 60;
 export const CAPACITY_PER_RAK = 40;
 export const BASE_MAX_QUALITY = 3;
 export const START_CASH = 50000;
-export const DAILY_RENT = 3000;
+export const DAILY_RENT = 1800;
 export const LEDGER_KEEP = 500;
 
 // ---------- Skill ----------
@@ -134,6 +136,7 @@ export const POTIONS = [
   { id: 'sahabat', name: 'Ramuan Sahabat', icon: '💚', price: 6000, days: 2, desc: 'Reputasi naik 50% lebih cepat dan turun 50% lebih lambat selama 2 hari.' },
   { id: 'borong', name: 'Ramuan Borong', icon: '🛒', price: 3500, days: 1, desc: 'Diskon grosir 12% (berlaku saat belanja sebelum toko dibuka).' },
   { id: 'bibit', name: 'Ramuan Bibit', icon: '🥚', price: 8000, days: 3, desc: 'Breeding: anakan +1 dan peluang naik kualitas +20% selama 3 hari.' },
+  { id: 'obat', name: 'Obat Hewan', icon: '🩹', price: 5000, days: 3, desc: 'Hewan tidak sakit atau mati selama 3 hari.' },
   { id: 'vip', name: 'Ramuan VIP', icon: '👑', price: 7000, days: 1, desc: 'Pelanggan VIP 2x lebih sering.' },
 ];
 
@@ -142,6 +145,8 @@ export const STAFF = [
   { id: 'kasir', name: 'Kasir', icon: '🧾', wage: 3000, needStars: 2, desc: 'Pembayaran 45% lebih cepat.' },
   { id: 'pramuniaga', name: 'Pramuniaga', icon: '🙋', wage: 3500, needStars: 2, desc: 'Pelanggan +10%.' },
   { id: 'penjaga', name: 'Penjaga Stok', icon: '📋', wage: 4000, needStars: 3, desc: 'Mengisi ulang stok yang hampir habis setiap toko dibuka.' },
+  { id: 'satpam', name: 'Satpam', icon: '💂', wage: 4500, needStars: 2, desc: 'Pencurian turun 80%.' },
+  { id: 'badut', name: 'Badut Penarik Pengunjung', icon: '🤡', wage: 3500, needStars: 2, desc: 'Mengajak pengunjung masuk: pelanggan +15%.' },
   { id: 'perawat', name: 'Perawat Hewan', icon: '🩺', wage: 5000, needStars: 3, desc: 'Breeding 1 hari lebih cepat dan peluang kualitas naik +10%.' },
 ];
 
@@ -246,3 +251,17 @@ export function parseLotKey(key) {
   const [itemId, q] = key.split(':');
   return { itemId, quality: Number(q) };
 }
+
+// ---------- Pengeluaran (sink) ----------
+export const SPEED_STEPS = [2, 4, 8]; // kecepatan maksimum menurut level upgrade 'kecepatan' (0, 1, 2)
+export const UPKEEP_PER_ANIMAL = 6; // perawatan harian per ekor hewan di stok
+export const UPKEEP_SHOP_STEP = 0.15; // tambahan per level toko di atas 1
+export const SICK_CHANCE = 0.012; // peluang hewan mati/sakit per ekor per hari
+export const THEFT_CHANCE = 0.04; // peluang pencurian per pelanggan (mulai hari ke-5)
+export const TAX_BRACKETS = [ // pajak progresif atas omzet harian
+  { from: 60000, rate: 0.05 },
+  { from: 200000, rate: 0.09 },
+  { from: 600000, rate: 0.14 },
+];
+export const WEALTH_TAX_FROM = 1500000; // kas di atas ini dikenai pajak harian
+export const WEALTH_TAX_RATE = 0.003;

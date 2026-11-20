@@ -21,4 +21,8 @@ npm run build    # build produksi (dist/)
 - Bank (pinjaman bertenor), deposito, saham, properti
 - Event harian, pelanggan 3 tipe, laporan keuangan harian
 - Simpan otomatis (IndexedDB) + cadangan, ekspor/impor, migrasi dari simpanan versi 1
+- v3: notifikasi bertumpuk di kanan atas, jumlah beli diingat + tombol +1/+5/+10/+100/Maks, ikon per spesies
+- v3: kecepatan 4x/8x dibuka dengan upgrade Mesin Waktu, pajak progresif, perawatan, hewan sakit, pencurian
+- v3: karyawan Satpam dan Badut, Ramuan Obat, Renovasi Toko, statistik terlaris
+- v3: efek suara dan musik latar (dibuat dengan WebAudio), animasi loading
 - PWA: bisa di-install dan jalan offline (siap PWA Builder)

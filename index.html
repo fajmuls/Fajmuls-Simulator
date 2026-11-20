@@ -8,8 +8,40 @@
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Pasar Satwa</title>
+    <style>
+      #loader { position: fixed; inset: 0; z-index: 100; background: #1c1410; display: grid; place-items: center; transition: opacity 0.45s ease; }
+      #loader.done { opacity: 0; pointer-events: none; }
+      #loader .box { width: min(78vw, 340px); text-align: center; color: #fdf2e0; font-family: system-ui, sans-serif; }
+      #loader h1 { margin: 0 0 4px; font-size: 30px; letter-spacing: 3px; color: #f59e0b; text-shadow: 3px 3px 0 #7c2d12; }
+      #loader p { margin: 0 0 18px; color: #bfa88a; font-size: 13px; }
+      #loader .lane { position: relative; height: 44px; margin-bottom: 14px; overflow: hidden; border-bottom: 3px solid #5b4330; }
+      #loader .pet { position: absolute; bottom: 2px; font-size: 28px; animation: walk 3.2s linear infinite; }
+      #loader .pet:nth-child(2) { animation-delay: -0.7s; animation-duration: 3.8s; }
+      #loader .pet:nth-child(3) { animation-delay: -1.5s; animation-duration: 2.9s; }
+      #loader .pet:nth-child(4) { animation-delay: -2.2s; animation-duration: 3.5s; }
+      #loader .pet:nth-child(5) { animation-delay: -2.8s; animation-duration: 4.1s; }
+      #loader .pet span { display: inline-block; animation: hop 0.5s ease-in-out infinite; }
+      @keyframes walk { from { left: -12%; } to { left: 104%; } }
+      @keyframes hop { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+      #loader .track { height: 12px; border: 2px solid #5b4330; border-radius: 4px; background: #0006; overflow: hidden; }
+      #loader .fill { height: 100%; width: 8%; background: repeating-linear-gradient(90deg, #f59e0b 0 10px, #fbbf24 10px 20px); animation: fill 2.2s ease-out forwards; }
+      @keyframes fill { to { width: 92%; } }
+      #loader.ready .fill { animation: none; width: 100%; transition: width 0.25s; }
+      #loader small { display: block; margin-top: 10px; color: #8a7358; font-size: 12px; }
+    </style>
   </head>
   <body>
+    <div id="loader">
+      <div class="box">
+        <h1>PASAR SATWA</h1>
+        <p>by Fajmuls</p>
+        <div class="lane" aria-hidden="true">
+          <div class="pet"><span>🐕</span></div><div class="pet"><span>🐦</span></div><div class="pet"><span>🐢</span></div><div class="pet"><span>🐹</span></div><div class="pet"><span>🐠</span></div>
+        </div>
+        <div class="track"><div class="fill"></div></div>
+        <small>Menyiapkan toko...</small>
+      </div>
+    </div>
     <div id="app">
       <header id="hud"></header>
       <main id="game"></main>

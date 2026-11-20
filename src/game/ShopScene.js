@@ -355,7 +355,10 @@ export class ShopScene extends Phaser.Scene {
       c.timer -= dt;
       if (c.timer <= 0) {
         const total = this.engine.pay(c.data.id);
-        if (total > 0) this._popup(c.x, c.y - 50, '+' + rupiah(total), '#facc15');
+        if (total > 0) {
+          this._popup(c.x, c.y - 50, '+' + rupiah(total), '#facc15');
+          this.hooks.onSale?.(total);
+        }
         this.queue = this.queue.filter((q) => q !== c);
         this._leave(c, true);
       }
