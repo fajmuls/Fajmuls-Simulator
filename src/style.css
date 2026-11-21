@@ -147,3 +147,24 @@ input[type='range'] { width: 100%; accent-color: var(--accent); }
 label.sub { display: grid; gap: 4px; }
 .dock-main { align-items: stretch; flex-wrap: wrap; }
 .dock-main .btn.go { min-width: 150px; }
+
+/* misi */
+.hud-chip.quest { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); cursor: pointer; }
+.hud-chip.quest.ready { border-color: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 #f59e0b66; } 50% { box-shadow: 0 0 0 5px #f59e0b00; } }
+.tab.badge-dot { position: relative; }
+.tab.badge-dot::after { content: ''; position: absolute; top: 4px; right: 14px; width: 9px; height: 9px; border-radius: 50%; background: var(--bad); }
+
+/* a11y */
+html.big body { font-size: 18px; }
+html.big .sub { font-size: 15px; }
+html.big .btn.small, html.big .tab { font-size: 15px; }
+html.contrast { --bg: #000; --panel: #14100c; --panel-2: #241a12; --line: #a8825a; --text: #fff; --muted: #e5d3b8; }
+html.contrast .sub { color: #fff; }
+.icon-btn { position: relative; }
+
+/* tutorial */
+.tut-dim { position: fixed; inset: 0; background: #0009; z-index: 60; pointer-events: auto; }
+.tut-hl { position: relative; z-index: 70 !important; box-shadow: 0 0 0 4px var(--accent), 0 0 0 9999px #0009 !important; border-radius: 12px; }
+.tut-card { position: fixed; left: 12px; right: 12px; bottom: 150px; max-width: 536px; margin: 0 auto; z-index: 80; background: var(--panel); border: 2px solid var(--accent); border-radius: 14px; padding: 12px; display: grid; gap: 8px; }
+.tut-card.mid { top: 30%; bottom: auto; }

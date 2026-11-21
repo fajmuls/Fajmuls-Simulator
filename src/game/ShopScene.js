@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { CATEGORIES, getItem, getQuality, itemsOf } from '../core/catalog.js';
 import { DAY_LENGTH_SEC } from '../core/engine.js';
 import { hashSeed } from '../core/rng.js';
+import { regularDef } from '../core/regulars.js';
 import {
   HAIRS, SKINS, buildCustomerTextures, buildIconTextures, buildShopBackground, buildShelfTexture,
   addBackground, customerTextureKey,
@@ -213,6 +214,12 @@ export class ShopScene extends Phaser.Scene {
       bought: false, timer: 0, anim: 0, frame: 'idle', bubble: null, slot: -1,
     };
     c.sprite = this.add.image(c.x, c.y, customerTextureKey(data.type, hair, skin, 'idle')).setOrigin(0.5, 1);
+    if (data.regularId) {
+      const q = data.request ? ` ${data.request.minQuality > 0 ? '★' + data.request.minQuality + '+' : ''}` : '';
+      c.tag = this.add.text(c.x, c.y - 72, `⭐ ${regularDef(data.regularId)?.name || 'Langganan'}${data.request ? ' · 🎯' + q : ''}`, {
+        fontFamily: 'monospace', fontSize: '9px', color: '#2b1604', backgroundColor: '#fbbf24', padding: { x: 3, y: 1 },
+      }).setOrigin(0.5, 1).setDepth(9999);
+    }
     this.customers.push(c);
     this._routeToShelf(c);
   }
@@ -311,6 +318,7 @@ export class ShopScene extends Phaser.Scene {
 
   _remove(c) {
     this._clearBubble(c);
+    c.tag?.destroy();
     c.sprite.destroy();
     this.customers = this.customers.filter((x) => x !== c);
   }
@@ -365,6 +373,7 @@ export class ShopScene extends Phaser.Scene {
     }
     c.sprite.setPosition(c.x, c.y);
     c.sprite.setDepth(c.y);
+    c.tag?.setPosition(c.x, c.y - 72);
     if (c.bubble) {
       c.bubble.t.setPosition(c.x, c.y - 40);
       c.bubble.icon?.setPosition(c.x, c.y - 58);

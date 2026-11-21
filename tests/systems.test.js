@@ -417,7 +417,7 @@ describe('migrasi simpanan versi 1', () => {
   it('memuat simpanan lama tanpa kehilangan stok, upgrade, dan spesies', () => {
     const old = v1State();
     const loaded = deserialize(serialize(old));
-    expect(loaded.v).toBe(3);
+    expect(loaded.v).toBe(4);
     expect(loaded.stats.items).toEqual({});
     expect(loaded.upgrades.kecepatan).toBe(0);
     expect(loaded.stock['mas:3'].qty).toBe(4);
@@ -474,7 +474,7 @@ describe('v3: kecepatan, pengeluaran, karyawan baru', () => {
     const copy = structuredClone(v2);
     const m = migrate(v2);
     expect(v2).toEqual(copy);
-    expect(m.v).toBe(3);
+    expect(m.v).toBe(4);
     expect(m.upgrades.kecepatan).toBe(0);
     expect(m.stats.items).toEqual({});
     expect(m.stock['cacing:3'].qty).toBe(5);
@@ -539,5 +539,53 @@ describe('v3: kecepatan, pengeluaran, karyawan baru', () => {
     const st = e.state.stats.items.cacing;
     expect(st.units).toBeGreaterThan(0);
     expect(st.revenue).toBeGreaterThan(0);
+  });
+});
+
+describe('v4: migrasi misi, pencapaian, langganan, tutorial', () => {
+  it('migrasi v3 menambah field baru, tidak mengubah data lama, dan lolos validasi', () => {
+    const e = new GameEngine(newState(11));
+    e.buyStock('cacing', 3, 8);
+    const v3 = structuredClone(e.state);
+    v3.v = 3;
+    for (const k of ['quests', 'ach', 'bonusPoints', 'regulars', 'tutorial']) delete v3[k];
+    for (const k of ['sold', 'bought', 'bred', 'questsDone']) delete v3.stats[k];
+    v3.stats.items = { cacing: { units: 12, revenue: 5000 } };
+    const copy = structuredClone(v3);
+    const m = migrate(v3);
+    expect(v3).toEqual(copy);
+    expect(m.v).toBe(4);
+    expect(m.stats.sold).toBe(12);
+    expect(m.stats.bought).toBe(0);
+    expect(m.quests).toEqual({ dayId: 0, weekId: -1, daily: [], weekly: [] });
+    expect(m.ach).toEqual({});
+    expect(m.regulars).toEqual({});
+    expect(m.bonusPoints).toBe(0);
+    expect(m.tutorial).toEqual({ step: 0, done: true }); // sudah punya stok = pemain lama
+    expect(m.stock['cacing:3'].qty).toBe(8);
+    expect(validateState(m)).toEqual([]);
+  });
+
+  it('pemain baru memulai tutorial, pemain v3 di hari 1 tanpa stok juga', () => {
+    const n = newState(3);
+    expect(n.tutorial).toEqual({ step: 0, done: false });
+    const old = structuredClone(n);
+    old.v = 3;
+    for (const k of ['quests', 'ach', 'bonusPoints', 'regulars', 'tutorial']) delete old[k];
+    expect(migrate(old).tutorial.done).toBe(false);
+  });
+
+  it('validasi menolak data misi/pencapaian/langganan rusak', () => {
+    const base = () => newState(5);
+    let s = base(); s.quests.daily = [{ id: 'x', goal: 0, prog: 0, claimed: false }];
+    expect(validateState(s)).toContain('Misi rusak');
+    s = base(); s.ach = { a: { day: 'x', claimed: false } };
+    expect(validateState(s)).toContain('Pencapaian rusak');
+    s = base(); s.regulars = { r: { bond: -1, visits: 0, last: 0 } };
+    expect(validateState(s)).toContain('Langganan rusak');
+    s = base(); s.bonusPoints = 1.5;
+    expect(validateState(s)).toContain('Poin bonus tidak valid');
+    s = base(); s.tutorial = { step: 0, done: 'ya' };
+    expect(validateState(s)).toContain('Tutorial rusak');
   });
 });

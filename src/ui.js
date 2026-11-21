@@ -4,6 +4,7 @@ import {
 import { DAY_LENGTH_SEC } from './core/engine.js';
 import { auditLedger } from './core/ledger.js';
 import { audio } from './audio.js';
+import { ACHIEVEMENTS } from './core/goals.js';
 
 export const rp = (n) => 'Rp ' + Math.round(n).toLocaleString('id-ID');
 export function rpShort(n) {
@@ -35,7 +36,10 @@ export function h(tag, attrs = {}, ...kids) {
 
 // Notifikasi bertumpuk di pojok kanan atas: pesan sama digabung (x2), maksimal 4 terlihat.
 const MAX_TOASTS = 4;
+export const notifLog = [];
 export function toast(msg, kind = '') {
+  notifLog.unshift({ msg, kind, t: Date.now() });
+  if (notifLog.length > 60) notifLog.pop();
   const root = document.getElementById('toast-root');
   if (kind === 'err') audio.play('err');
   const last = root.lastElementChild;
@@ -55,6 +59,25 @@ export function toast(msg, kind = '') {
   el._t = setTimeout(() => el.remove(), 2600);
 }
 
+const A11Y_KEY = 'pasarsatwa_a11y';
+export function getA11y() {
+  try { return { big: false, contrast: false, ...JSON.parse(localStorage.getItem(A11Y_KEY) || '{}') }; } catch { return { big: false, contrast: false }; }
+}
+export function applyA11y() {
+  const a = getA11y();
+  document.documentElement.classList.toggle('big', !!a.big);
+  document.documentElement.classList.toggle('contrast', !!a.contrast);
+}
+export function setA11y(patch) {
+  try { localStorage.setItem(A11Y_KEY, JSON.stringify({ ...getA11y(), ...patch })); } catch { /* abaikan */ }
+  applyA11y();
+}
+let installEvt = null;
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (ev) => { ev.preventDefault(); installEvt = ev; });
+  applyA11y();
+}
+
 export const ITEM_ICON = {
   cacing: '🪱', jangkrik: '🦗', pelet: '🥣', voer: '🌾',
   lele: '🐟', mas: '🐠', cupang: '🐡', koi: '🎏', arwana: '🐉',
@@ -67,7 +90,7 @@ export const iname = (it) => `${ITEM_ICON[it.id] || '📦'} ${it.name}`;
 export const CAT_EMOJI = { perlengkapan: '🪱', ikan: '🐟', burung: '🐦', reptil: '🦎', kecil: '🐹' };
 
 export const FLOW_LABEL = {
-  sale: 'Penjualan', upkeep: 'Perawatan', tax: 'Pajak', buy_stock: 'Belanja stok', rent: 'Sewa toko', wage: 'Gaji karyawan', arrears: 'Tunggakan',
+  sale: 'Penjualan', reward: 'Hadiah', tip: 'Tip pelanggan', upkeep: 'Perawatan', tax: 'Pajak', buy_stock: 'Belanja stok', rent: 'Sewa toko', wage: 'Gaji karyawan', arrears: 'Tunggakan',
   upgrade: 'Upgrade', expand: 'Perluas toko', species: 'Kontrak spesies', potion: 'Ramuan', breeding: 'Breeding',
   invest: 'Deposito', invest_return: 'Deposito kembali', interest: 'Bunga', stock_buy: 'Beli saham', stock_sell: 'Jual saham',
   property: 'Beli properti', property_sale: 'Jual properti', rent_income: 'Sewa properti', loan: 'Pinjaman', loan_pay: 'Cicilan pinjaman',
@@ -97,15 +120,70 @@ export class UI {
     this.hudBar = h('i');
     this.hudEvent = h('span', { class: 'hud-chip' });
     this.hudLow = h('span', { class: 'hud-chip warn', style: 'display:none' });
+    this.hudQuest = h('button', { class: 'hud-chip quest', onClick: () => this.openMisi() });
+    this.bellBtn = h('button', { class: 'icon-btn', 'aria-label': 'Riwayat notifikasi', onClick: () => this.openRiwayat() }, '🔔');
     this.soundBtn = h('button', { class: 'icon-btn', 'aria-label': 'Suara', onClick: () => { audio.unlock(); audio.setMuted(!audio.muted); this.syncSound(); } });
     hud.append(
-      h('div', { class: 'hud-row' }, h('div', { class: 'hud-title' }, '🐾 Pasar Satwa'), h('div', { class: 'row', style: 'gap:6px' }, this.hudDay, this.hudStar, this.soundBtn)),
-      h('div', { class: 'hud-row' }, this.hudCash, h('div', { class: 'hud-chips' }, this.hudDebt, this.hudLow, this.hudEvent)),
+      h('div', { class: 'hud-row' }, h('div', { class: 'hud-title' }, '🐾 Pasar Satwa'), h('div', { class: 'row', style: 'gap:6px' }, this.hudDay, this.hudStar, this.bellBtn, this.soundBtn)),
+      h('div', { class: 'hud-row' }, this.hudCash, h('div', { class: 'hud-chips' }, this.hudQuest, this.hudDebt, this.hudLow, this.hudEvent)),
       h('div', { class: 'hud-row' }, this.hudLive),
       h('div', { class: 'bar' }, this.hudBar),
     );
     this.syncSound();
     this.refreshHud();
+  }
+
+  // ---------- Tutorial ----------
+  tutorialSteps() {
+    return [
+      { mid: true, title: 'Selamat datang di Pasar Satwa! 🐾', text: 'Kamu pemilik toko hewan dan perlengkapannya. Tutorial singkat ini 8 langkah, bisa dilewati kapan saja.' },
+      { el: () => this.tabs.grosir, title: '1. Belanja di Grosir', text: 'Beli stok cacing, pakan, dan hewan. Harga grosir berubah tiap hari, tombol +10 / +100 / Maks mempercepat.' },
+      { el: () => this.tabs.harga, title: '2. Atur harga', text: 'Harga jual menentukan untung. Terlalu mahal, pelanggan pergi. Terlalu murah, untung tipis.' },
+      { el: () => this.goBtn, title: '3. Buka toko', text: 'Tekan Buka Toko. Pelanggan datang, memilih, antre, lalu bayar. Stok kosong berarti tidak ada penjualan.' },
+      { el: () => this.speedBox, title: '4. Kecepatan', text: 'Percepat hari dengan 2x, 4x, 8x. Kecepatan di atas 1x dibuka lewat Upgrade Mesin Waktu.' },
+      { el: () => this.hudQuest, title: '5. Misi harian', text: 'Selesaikan misi untuk hadiah uang dan poin skill. Ketuk untuk melihat dan mengambil hadiah.' },
+      { el: () => this.tabs.fitur, title: '6. Fitur', text: 'Di sini ada Misi, Buku Langganan (pelanggan tetap yang makin akrab), Upgrade, Skill, Karyawan, Bank, dan lainnya.' },
+      { el: () => this.tabs.menu, title: '7. Menu', text: 'Simpan, cadangkan, atur suara, huruf besar, dan ulangi tutorial ini kapan saja. Selamat berdagang!' },
+    ];
+  }
+
+  startTutorial() {
+    const t = this.e.state.tutorial;
+    if (t.done) return;
+    this.showTutorialStep();
+  }
+
+  clearTutorial() {
+    document.querySelectorAll('.tut-hl').forEach((n) => n.classList.remove('tut-hl'));
+    this.tutCard?.remove();
+    this.tutCard = null;
+  }
+
+  showTutorialStep() {
+    this.clearTutorial();
+    const t = this.e.state.tutorial;
+    const steps = this.tutorialSteps();
+    if (t.done || t.step >= steps.length) { t.done = true; return; }
+    const st = steps[t.step];
+    const el = st.el?.();
+    const ok = el && el.getBoundingClientRect().width > 0;
+    if (ok) el.classList.add('tut-hl');
+    const finish = () => { t.done = true; this.clearTutorial(); this.ctx.persist?.(); };
+    const last = t.step === steps.length - 1;
+    this.tutCard = h('div', { class: `tut-card${ok ? '' : ' mid'}` },
+      h('b', {}, st.title), h('div', { class: 'sub' }, st.text),
+      h('div', { class: 'row', style: 'justify-content:space-between' },
+        h('button', { class: 'btn secondary small', onClick: finish }, 'Lewati'),
+        h('span', { class: 'sub' }, `${t.step + 1}/${steps.length}`),
+        h('button', { class: 'btn small', onClick: () => { audio.play('click'); if (last) finish(); else { t.step += 1; this.showTutorialStep(); } } }, last ? 'Selesai' : 'Lanjut')));
+    document.body.append(this.tutCard);
+  }
+
+  openRiwayat() {
+    this.openSheet('🔔 Riwayat notifikasi', () => [
+      notifLog.length ? null : h('div', { class: 'card' }, 'Belum ada notifikasi.'),
+      ...notifLog.map((n) => h('div', { class: `card${n.kind === 'err' ? ' warn' : ''}` }, h('div', {}, n.msg), h('div', { class: 'sub' }, new Date(n.t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })))),
+    ].filter(Boolean));
   }
 
   syncSound() {
@@ -124,6 +202,13 @@ export class UI {
       this.hudDebt.textContent = `Utang ${rpShort(owed)}`;
     } else this.hudDebt.style.display = 'none';
 
+    e.ensureQuests();
+    for (const n of e.takeNotes()) toast(n.text, 'ok');
+    const claimable = this.claimableCount();
+    const doneQ = s.quests.daily.filter((x) => x.prog >= x.goal).length;
+    this.hudQuest.textContent = `🎯 ${doneQ}/${s.quests.daily.length}${claimable ? ' 🎁' : ''}`;
+    this.hudQuest.classList.toggle('ready', claimable > 0);
+    this.tabs.fitur?.classList.toggle('badge-dot', claimable > 0);
     const ev = e.mods().event;
     this.hudEvent.textContent = `${ev.icon} ${ev.name}`;
     const lowN = e.lowStock().length;
@@ -311,6 +396,7 @@ export class UI {
           s.breeding.length ? h('div', { class: 'sub' }, `Termasuk ${s.breeding.length * 2} induk di kandang breeding`) : null,
           e.skillRank('insting') > 0 ? h('div', { class: 'sub' }, `🔮 Besok: ${e.eventOf(s.day + 1).icon} ${e.eventOf(s.day + 1).name}`) : null),
         h('button', { class: 'btn secondary', onClick: () => this.act(() => e.restockLast(), (log) => (log.length ? `Isi ulang ${log.length} jenis barang · ${rp(log.reduce((a, b) => a + b.cost, 0))}` : 'Semua barang sudah cukup atau uang/ruang kurang')) }, '🔁 Isi ulang yang menipis (sesuai pembelian terakhir)'),
+        Object.keys(s.restock).length ? h('button', { class: 'btn secondary', onClick: () => this.act(() => e.refillToTargets(), (log) => (log.length ? `Diisi ke target: ${log.length} jenis · ${rp(log.reduce((a, b) => a + b.cost, 0))}` : 'Semua sudah mencapai target atau uang/ruang kurang'), 'buy') }, '🎯 Isi semua ke target stok') : null,
         this.chips(openCats.map((c) => ({ id: c.id, label: `${CAT_EMOJI[c.id]} ${c.short}` })), this.grosirCat, (id) => { this.grosirCat = id; this.rerender(); }),
       ];
       for (const it of itemsOf(this.grosirCat)) {
@@ -498,6 +584,16 @@ export class UI {
           h('div', { class: 'sub' }, perk.text.map((t) => `• ${t}`).join('\n'))));
       }
       out.push(this.summaryCard(summary, 'Ringkasan hari ini'));
+      if (summary.newAchievements?.length) {
+        out.push(h('div', { class: 'card hero' }, h('b', {}, '🏅 Pencapaian baru!'),
+          summary.newAchievements.map((id) => { const a = ACHIEVEMENTS.find((x) => x.id === id); return h('div', { class: 'sub' }, `${a.icon} ${a.name}: ${a.desc}`); }),
+          h('button', { class: 'btn small', onClick: () => { this.closeModal(); this.openMisi(); this.misiTab = 'ach'; this.rerender(); } }, 'Lihat dan ambil hadiah')));
+      }
+      if (summary.regulars?.length) {
+        out.push(h('div', { class: 'card' }, h('b', {}, '⭐ Langganan hari ini'),
+          summary.regulars.map((r) => h('div', { class: 'sub' }, `${r.icon} ${r.name}: ${r.requested ? (r.fulfilled ? 'permintaan terpenuhi' : 'permintaan tidak terpenuhi') : 'belanja'} · +${r.bondGain} kedekatan${r.tip ? ` · tip ${rp(r.tip)}` : ''}${r.levelUp ? ' · 🎉 naik level!' : ''}`)),
+          h('button', { class: 'btn small secondary', onClick: () => { this.closeModal(); this.openLangganan(); } }, 'Buka Buku Langganan')));
+      }
       const lossLine = (arr) => arr.map((x) => `${x.n} ${iname(getItem(x.itemId))}`).join(', ');
       if (summary.died?.length) out.push(h('div', { class: 'card warn' }, h('b', { class: 'bad' }, '🩺 Hewan sakit dan mati'), h('div', { class: 'sub' }, lossLine(summary.died)), h('div', { class: 'sub' }, 'Pakai Ramuan Obat atau pekerjakan Perawat Hewan untuk menguranginya.')));
       if (summary.stolen?.length) out.push(h('div', { class: 'card warn' }, h('b', { class: 'bad' }, '🕵️ Ada pencurian'), h('div', { class: 'sub' }, lossLine(summary.stolen)), h('div', { class: 'sub' }, 'Satpam menurunkan pencurian sampai 80%.')));
@@ -541,6 +637,11 @@ export class UI {
           h('label', { class: 'sub' }, 'Efek suara', h('input', { type: 'range', min: 0, max: 100, value: Math.round(audio.sfxVol * 100), onInput: (ev) => audio.setSfx(Number(ev.target.value) / 100), onChange: () => audio.play('ok') })),
           h('label', { class: 'sub' }, 'Musik latar', h('input', { type: 'range', min: 0, max: 100, value: Math.round(audio.musicVol * 100), onInput: (ev) => audio.setMusic(Number(ev.target.value) / 100) })),
           h('button', { class: 'btn secondary small', onClick: () => { audio.unlock(); audio.setMuted(!audio.muted); this.syncSound(); this.rerender(); } }, audio.muted ? '🔇 Suara mati, tekan untuk menyalakan' : '🔊 Suara menyala, tekan untuk membisukan')),
+        h('div', { class: 'card' }, h('b', {}, '♿ Tampilan'),
+          h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: getA11y().big, onChange: (ev) => setA11y({ big: ev.target.checked }) }), 'Huruf besar'),
+          h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: getA11y().contrast, onChange: (ev) => setA11y({ contrast: ev.target.checked }) }), 'Kontras tinggi'),
+          installEvt ? h('button', { class: 'btn secondary small', onClick: async () => { installEvt.prompt(); await installEvt.userChoice; installEvt = null; this.rerender(); } }, '📲 Pasang aplikasi di layar utama') : h('div', { class: 'sub' }, 'Untuk memasang: gunakan menu browser "Tambahkan ke layar utama".'),
+          h('button', { class: 'btn secondary small', onClick: () => { this.e.state.tutorial = { step: 0, done: false }; this.closeModal(); this.startTutorial(); } }, '🎓 Ulangi tutorial')),
         h('div', { class: 'card' }, h('b', {}, 'Simpan'),
           h('div', { class: 'sub' }, 'Tersimpan otomatis di perangkat setiap toko tutup. Hari yang sedang berjalan tidak disimpan.'),
           h('button', { class: 'btn', onClick: () => { this.ctx.persist(true); toast('Tersimpan', 'ok'); } }, '💾 Simpan sekarang')),
@@ -562,7 +663,7 @@ export class UI {
           h('button', { class: 'btn danger', disabled: e.state.phase === 'open', onClick: () => {
             if (confirm('Hapus progres dan mulai game baru? Ini tidak bisa dibatalkan.')) { this.ctx.newGame(); this.closeModal(); }
           } }, '🗑️ Mulai game baru')),
-        h('div', { class: 'sub', style: 'text-align:center' }, `Pasar Satwa by Fajmuls · v3.0 · 1 hari = ${DAY_LENGTH_SEC}s pada 1x`),
+        h('div', { class: 'sub', style: 'text-align:center' }, `Pasar Satwa by Fajmuls · v4.0 · 1 hari = ${DAY_LENGTH_SEC}s pada 1x`),
       ];
     });
   }

@@ -55,6 +55,7 @@ async function boot() {
       persist();
       ui.refreshHud();
       toast('Game baru dimulai', 'ok');
+      setTimeout(() => ui.startTutorial(), 400);
     },
     importText(text) {
       const state = deserialize(text);
@@ -87,6 +88,7 @@ async function boot() {
       scene = s;
       ui.refreshHud();
       finishLoading();
+      setTimeout(() => ui.startTutorial(), 2400);
     },
     onSale: () => audio.play('coin'),
     onTick: (tick) => ui.refreshHud(tick),

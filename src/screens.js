@@ -4,6 +4,9 @@ import {
   getItem, getQuality, getUpgrade, getSkill, getShare, getProperty, itemsOf,
 } from './core/catalog.js';
 import { UI, h, rp, rpShort, starsText, qStars, CAT_EMOJI, iname } from './ui.js';
+import { ACHIEVEMENTS, achStat, questText, questIcon } from './core/goals.js';
+import { audio } from './audio.js';
+import { REGULARS, BOND_THRESH, LEVEL_NAMES, LEVEL_REWARDS, LEVEL_PERKS, bondLevel, nextThresh } from './core/regulars.js';
 
 const P = UI.prototype;
 
@@ -14,6 +17,8 @@ P.openFitur = function openFitur() {
     const s = e.state;
     const ready = s.breeding.filter((b) => s.day >= b.ready).length;
     const tiles = [
+      ['🎯', 'Misi & Pencapaian', `${this.questSummary()}`, () => this.openMisi(), this.claimableCount() || null],
+      ['⭐', 'Buku Langganan', `${Object.keys(s.regulars).length}/${REGULARS.length} dikenal`, () => this.openLangganan(), this.regularClaimable() || null],
       ['🐾', 'Daftar Hewan', 'Buka spesies baru', () => this.openSpesies(), null],
       ['⭐', 'Bintang', `${starsText(s.stars)} · rep ${s.reputation.toFixed(1)}`, () => this.openBintang(), null],
       ['🌳', 'Pohon Skill', `${e.skillPointsFree()} poin bebas`, () => this.openSkill(), e.skillPointsFree() > 0 ? e.skillPointsFree() : null],
@@ -306,6 +311,110 @@ P.openInvestasi = function openInvestasi() {
         h('div', { class: 'row' },
           h('button', { class: 'btn small grow', disabled: n >= p.max || s.ledger.balance < p.cost || s.phase === 'open', onClick: () => this.act(() => e.buyProperty(p.id), `${p.name} dibeli`) }, n >= p.max ? 'Maksimum' : `Beli ${rp(p.cost)}`),
           h('button', { class: 'btn secondary small', disabled: n < 1 || s.phase === 'open', onClick: () => { if (confirm(`Jual ${p.name} dengan harga ${Math.round(PROPERTY_SELL_RATE * 100)}%?`)) this.act(() => e.sellProperty(p.id), 'Properti dijual'); } }, 'Jual'))));
+    }
+    return out;
+  });
+};
+
+// ---------- Misi & Pencapaian ----------
+P.claimableCount = function claimableCount() {
+  const e = this.e;
+  e.ensureQuests();
+  const q = e.state.quests;
+  let n = [...q.daily, ...q.weekly].filter((x) => x.prog >= x.goal && !x.claimed).length;
+  n += Object.values(e.state.ach).filter((a) => !a.claimed).length;
+  return n;
+};
+
+P.questSummary = function questSummary() {
+  const q = this.e.state.quests;
+  const done = q.daily.filter((x) => x.prog >= x.goal).length;
+  return `Harian ${done}/${q.daily.length}`;
+};
+
+const rewardText = (r) => [r.cash ? rp(r.cash) : null, r.points ? `${r.points} poin skill` : null].filter(Boolean).join(' + ');
+
+P.openMisi = function openMisi() {
+  this.misiTab = this.misiTab || 'daily';
+  this.openSheet('🎯 Misi & Pencapaian', () => {
+    const e = this.e;
+    e.ensureQuests();
+    const s = e.state;
+    const q = s.quests;
+    const unclaimedAch = Object.values(s.ach).filter((a) => !a.claimed).length;
+    const out = [this.chips([
+      { id: 'daily', label: `📅 Harian` },
+      { id: 'weekly', label: `🗓️ Mingguan` },
+      { id: 'ach', label: `🏅 Pencapaian${unclaimedAch ? ` (${unclaimedAch})` : ''}` },
+    ], this.misiTab, (id) => { this.misiTab = id; this.rerender(); })];
+    const questCard = (x, i, scope) => {
+      const done = x.prog >= x.goal;
+      return h('div', { class: `card${x.claimed ? ' dim' : ''}` },
+        h('div', { class: 'card-top' }, h('b', {}, `${questIcon(x)} ${questText(x)}`), h('span', { class: 'badge' }, x.claimed ? '✔ Diambil' : `${x.prog}/${x.goal}`)),
+        h('div', { class: 'meter' }, h('i', { style: `width:${Math.min(100, (x.prog / x.goal) * 100)}%` })),
+        h('div', { class: 'row', style: 'justify-content:space-between' },
+          h('span', { class: 'sub' }, `Hadiah: ${rewardText(x.reward)}`),
+          h('button', { class: 'btn small', disabled: !done || x.claimed, onClick: () => this.act(() => e.claimQuest(scope, i), (r) => `Hadiah ${rewardText(r)}`, 'star') }, x.claimed ? 'Selesai' : done ? 'Ambil' : 'Belum')));
+    };
+    if (this.misiTab === 'daily') {
+      out.push(h('div', { class: 'sub' }, `Hari ${s.day}. Misi harian diganti tiap hari baru. Misi yang selesai tapi lupa diambil dibayar otomatis.`));
+      q.daily.forEach((x, i) => out.push(questCard(x, i, 'daily')));
+    } else if (this.misiTab === 'weekly') {
+      const endDay = (q.weekId + 1) * 7;
+      out.push(h('div', { class: 'sub' }, `Berakhir di akhir hari ke-${endDay} (${Math.max(0, endDay - s.day + 1)} hari lagi). Misi omzet memberi poin skill di bintang 2 ke atas.`));
+      q.weekly.forEach((x, i) => out.push(questCard(x, i, 'weekly')));
+    } else {
+      e.checkAchievements();
+      const total = ACHIEVEMENTS.length;
+      out.push(h('div', { class: 'sub' }, `${Object.keys(s.ach).length}/${total} terbuka · Misi selesai: ${s.stats.questsDone}`));
+      for (const a of ACHIEVEMENTS) {
+        const st = s.ach[a.id];
+        const val = Math.min(a.goal, Math.floor(achStat(e, a.stat)));
+        out.push(h('div', { class: `card${st ? '' : ' dim'}` },
+          h('div', { class: 'card-top' }, h('b', {}, `${a.icon} ${a.name}`), h('span', { class: 'badge' }, st ? (st.claimed ? '✔' : '🎁') : `${val.toLocaleString('id-ID')}/${a.goal.toLocaleString('id-ID')}`)),
+          h('div', { class: 'sub' }, a.desc),
+          st ? h('div', { class: 'row', style: 'justify-content:space-between' },
+            h('span', { class: 'sub' }, `Hadiah: ${rewardText(a.reward)}`),
+            h('button', { class: 'btn small', disabled: st.claimed, onClick: () => this.act(() => e.claimAchievement(a.id), (r) => `Hadiah ${rewardText(r)}`, 'star') }, st.claimed ? 'Diambil' : 'Ambil')) : null));
+      }
+    }
+    return out;
+  });
+};
+
+// ---------- Buku Langganan ----------
+P.regularClaimable = function regularClaimable() {
+  return Object.values(this.e.state.regulars).filter((r) => (r.claimed ?? 1) < bondLevel(r.bond) && LEVEL_REWARDS[(r.claimed ?? 1) + 1]).length;
+};
+
+P.openLangganan = function openLangganan() {
+  this.openSheet('⭐ Buku Langganan', () => {
+    const e = this.e;
+    const out = [h('div', { class: 'sub' }, 'Pelanggan tetap datang kalau hewan favoritnya sudah kamu jual. Penuhi permintaan kualitasnya agar makin akrab, rela bayar lebih mahal, dan memberi hadiah tiap naik level.')];
+    for (const r of REGULARS) {
+      const st = e.state.regulars[r.id];
+      const fav = getItem(r.fav);
+      if (!e.isUnlocked(r.fav) && !st) {
+        out.push(h('div', { class: 'card dim' }, h('b', {}, '❓ Belum dikenal'), h('div', { class: 'sub' }, `Buka spesies ${fav.name} untuk bertemu dia.`)));
+        continue;
+      }
+      if (!st) {
+        out.push(h('div', { class: 'card' }, h('b', {}, `${r.icon} ${r.name}`), h('div', { class: 'sub' }, r.story), h('div', { class: 'sub' }, `Suka: ${iname(fav)}. Belum pernah berkunjung.`)));
+        continue;
+      }
+      const lvl = bondLevel(st.bond);
+      const nt = nextThresh(st.bond);
+      const claimedLv = st.claimed ?? 1;
+      const canClaim = claimedLv < lvl && LEVEL_REWARDS[claimedLv + 1];
+      const base = BOND_THRESH[lvl - 1];
+      out.push(h('div', { class: `card${canClaim ? ' hero' : ''}` },
+        h('div', { class: 'card-top' }, h('b', {}, `${r.icon} ${r.name}`), h('span', { class: 'badge' }, `Lv ${lvl} ${LEVEL_NAMES[lvl - 1]}`)),
+        h('div', { class: 'sub' }, r.story),
+        h('div', { class: 'sub' }, `Suka: ${iname(fav)} · ${st.visits} kunjungan`),
+        h('div', { class: 'meter' }, h('i', { style: `width:${nt ? Math.min(100, ((st.bond - base) / (nt - base)) * 100) : 100}%` })),
+        h('div', { class: 'sub' }, nt ? `Kedekatan ${st.bond}/${nt}` : `Kedekatan ${st.bond} (maks)`),
+        LEVEL_PERKS[lvl - 1] ? h('div', { class: 'sub' }, `✨ ${LEVEL_PERKS[lvl - 1]}`) : null,
+        canClaim ? h('button', { class: 'btn small', onClick: () => this.act(() => e.claimRegular(r.id), (x) => `Hadiah ${rewardText(x)}`, 'star') }, `Ambil hadiah Lv ${claimedLv + 1}: ${rewardText(LEVEL_REWARDS[claimedLv + 1])}`) : null));
     }
     return out;
   });

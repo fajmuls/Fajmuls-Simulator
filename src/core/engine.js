@@ -10,9 +10,11 @@ import {
 } from './catalog.js';
 import { createLedger, credit, debit, sumByType } from './ledger.js';
 import { mulberry32, hashSeed, pickWeighted } from './rng.js';
+import { planRegulars, onRegularPaid, maxBondLevel, claimRegular } from './regulars.js';
+import { ensureQuests, trackQuests, claimQuest, checkAchievements, claimAchievement } from './goals.js';
 
 export const DAY_LENGTH_SEC = 60; // lama jendela pelanggan datang pada kecepatan 1x
-export const STATE_VERSION = 3;
+export const STATE_VERSION = 4;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -63,7 +65,12 @@ export function newState(seed = Date.now() % 2147483647) {
     reputation: 10,
     stars: 1,
     arrears: 0, // tunggakan sewa dan gaji
-    stats: { revenue: 0, customers: 0, bestDay: 0, items: {} },
+    stats: { revenue: 0, customers: 0, bestDay: 0, items: {}, sold: 0, bought: 0, bred: 0, questsDone: 0 },
+    quests: { dayId: 0, weekId: -1, daily: [], weekly: [] }, // misi aktif (dibuat deterministik per hari/minggu)
+    ach: {}, // id pencapaian -> { day, claimed }
+    bonusPoints: 0, // poin skill tambahan dari hadiah
+    regulars: {}, // id pelanggan langganan -> { bond, visits, last }
+    tutorial: { step: 0, done: false },
     history: [],
   };
 }
@@ -73,12 +80,32 @@ export function migrate(input) {
   if (!input || typeof input !== 'object') return input;
   if (input.v === STATE_VERSION) return input;
   if (input.v === 1) return migrate(migrateV1(input));
-  if (input.v !== 2) return input;
+  if (input.v === 2) return migrate(migrateV2(input));
+  if (input.v === 3) return migrateV3(input);
+  return input;
+}
+
+function migrateV2(input) {
   const s = structuredClone(input);
   const base = newState(s.seed);
   s.v = 3;
   s.upgrades = { ...base.upgrades, ...s.upgrades };
   s.stats = { ...base.stats, ...s.stats, items: s.stats?.items || {} };
+  return s;
+}
+
+// v3 -> v4: misi, pencapaian, pelanggan langganan, tutorial. Pemain lama tidak perlu tutorial.
+function migrateV3(input) {
+  const s = structuredClone(input);
+  const base = newState(s.seed);
+  s.v = 4;
+  const soldUnits = Object.values(s.stats?.items || {}).reduce((a, b) => a + (b.units || 0), 0);
+  s.stats = { ...base.stats, ...s.stats, sold: s.stats?.sold ?? soldUnits };
+  s.quests = base.quests;
+  s.ach = {};
+  s.bonusPoints = 0;
+  s.regulars = {};
+  s.tutorial = { step: 0, done: s.day > 1 || Object.keys(s.stock || {}).length > 0 };
   return s;
 }
 
@@ -118,6 +145,7 @@ export class GameEngine {
     this.plan = [];
     this.today = null;
     this.lastRestock = [];
+    this.notes = []; // pesan sementara untuk UI (hadiah otomatis dll), tidak disimpan
     this._marketCache = new Map();
   }
 
@@ -130,6 +158,16 @@ export class GameEngine {
     this.lastRestock = [];
     this._marketCache.clear();
   }
+
+  // ---------- Misi dan pencapaian (lihat goals.js) ----------
+  ensureQuests() { return ensureQuests(this); }
+  track(kind, n = 1, extra = {}) { trackQuests(this, kind, n, extra); }
+  claimQuest(scope, index) { return claimQuest(this, scope, index); }
+  checkAchievements() { return checkAchievements(this); }
+  claimAchievement(id) { return claimAchievement(this, id); }
+  maxBondLevel() { return maxBondLevel(this); }
+  claimRegular(id) { return claimRegular(this, id); }
+  takeNotes() { const n = this.notes; this.notes = []; return n; }
 
   _requireIdle() {
     if (this.state.phase !== 'idle') throw new Error('Tutup toko dulu untuk melakukan ini');
@@ -333,7 +371,7 @@ export class GameEngine {
   // ---------- Skill ----------
   skillPointsTotal() {
     const s = this.state;
-    return STAR_POINTS[s.stars - 1] + (s.shopLevel - 1) + Math.floor((s.day - 1) / SKILL_POINT_EVERY_DAYS);
+    return STAR_POINTS[s.stars - 1] + (s.shopLevel - 1) + Math.floor((s.day - 1) / SKILL_POINT_EVERY_DAYS) + (s.bonusPoints || 0);
   }
 
   skillPointsSpent() {
@@ -438,11 +476,32 @@ export class GameEngine {
     return log;
   }
 
+  // Isi ulang semua barang ke target Penjaga Stok (manual, tanpa perlu karyawan). Menyisakan uang untuk kewajiban harian.
+  refillToTargets() {
+    this._requireIdle();
+    const log = [];
+    const reserve = this.dailyObligations();
+    for (const [itemId, rule] of Object.entries(this.state.restock)) {
+      if (!rule || rule.target <= 0 || !this.isUnlocked(itemId)) continue;
+      const have = this.totalQty(itemId);
+      if (have >= rule.target) continue;
+      const q = Math.min(rule.q, this.maxQuality());
+      const unit = this.wholesalePrice(itemId, q);
+      const n = Math.min(rule.target - have, this.capacity() - this.usedCapacity(), Math.floor((this.state.ledger.balance - reserve) / unit));
+      if (n < 1) continue;
+      const cost = this._buy(itemId, q, n, 'Isi ke target');
+      this.track('buy_units', n);
+      log.push({ itemId, q, n, cost });
+    }
+    return log;
+  }
+
   // ---------- Belanja ----------
   _buy(itemId, quality, qty, label = 'Beli') {
     const unit = this.wholesalePrice(itemId, quality);
     const total = unit * qty;
     debit(this.state.ledger, this.state.day, 'buy_stock', total, `${label} ${qty} ${getItem(itemId).name} (${getQuality(quality).name})`);
+    this.state.stats.bought += qty;
     const key = lotKey(itemId, quality);
     const lot = this.state.stock[key] || { qty: 0, cost: 0 };
     lot.qty += qty;
@@ -459,6 +518,7 @@ export class GameEngine {
     if (!Number.isInteger(quality) || quality < 1 || quality > this.maxQuality()) throw new Error('Kualitas belum tersedia di grosir');
     if (this.usedCapacity() + qty > this.capacity()) throw new Error('Kapasitas toko tidak cukup');
     const total = this._buy(itemId, quality, qty);
+    this.track('buy_units', qty);
     this.state.lastBuy[itemId] = { q: quality, n: Math.max(qty, this.state.lastBuy[itemId]?.n || 0) };
     return total;
   }
@@ -600,6 +660,8 @@ export class GameEngine {
       if (!s.prices[key]) s.prices[key] = this.suggestedPrice(b.itemId, q);
     });
     s.breeding.splice(idx, 1);
+    s.stats.bred += 1;
+    this.track('breed', 1);
     return b.offspring.slice();
   }
 
@@ -774,7 +836,7 @@ export class GameEngine {
     const times = [];
     for (let i = 0; i < n; i++) times.push(rng() * DAY_LENGTH_SEC);
     times.sort((a, b) => a - b);
-    return times.map((t, i) => {
+    const base = times.map((t, i) => {
       const type = pickWeighted(rng, types);
       const wantCount = rng() < 0.35 ? 2 : 1;
       const pool = items.slice();
@@ -787,6 +849,8 @@ export class GameEngine {
       }
       return { id: `${s.day}-${i + 1}`, type: type.id, spawnAt: t, wants };
     });
+    // pelanggan langganan datang di luar pelanggan biasa (rencana dasar tidak berubah)
+    return base.concat(planRegulars(this, s.day, DAY_LENGTH_SEC)).sort((a, b) => a.spawnAt - b.spawnAt);
   }
 
   startDay() {
@@ -795,7 +859,7 @@ export class GameEngine {
     if (this.state.autoPrice.on) this.setAllPrices(this.state.autoPrice.pct);
     this.plan = this.generatePlan();
     this.reserved.clear();
-    this.today = { revenue: 0, cogs: 0, customers: this.plan.length, served: 0, lost: 0, soldUnits: 0 };
+    this.today = { revenue: 0, cogs: 0, customers: this.plan.length, served: 0, lost: 0, soldUnits: 0, tips: 0, regulars: [] };
     this.state.phase = 'open';
     return this.plan;
   }
@@ -821,7 +885,7 @@ export class GameEngine {
 
     const m = this.mods();
     const prem = 0.06 * (this.state.upgrades[`prem_${item.cat}`] || 0);
-    const wtpMult = (1 + m.wtp + prem) * type.wtp * want.noise;
+    const wtpMult = (1 + m.wtp + prem) * type.wtp * want.noise * (1 + (customer.bonusWtp || 0));
     const affordable = lots
       .filter((l) => l.quality >= type.minQuality)
       .map((l) => ({ ...l, price: this.priceOf(l.itemId, l.quality) }))
@@ -864,6 +928,19 @@ export class GameEngine {
       st.revenue += r.revenue;
     }
     this.reserved.delete(customerId);
+    // statistik seumur hidup dan misi
+    this.state.stats.sold += units;
+    this.track('serve', 1);
+    this.track('sell_units', units);
+    this.track('revenue', total);
+    for (const r of list) this.track('sell_cat', r.qty, { cat: getItem(parseLotKey(r.key).itemId).cat });
+    const cust = this.plan.find((c) => c.id === customerId);
+    if (cust?.type === 'vip') this.track('vip', 1);
+    if (cust?.regularId) {
+      const visit = onRegularPaid(this, cust, list, total);
+      this.today.tips += visit.tip;
+      this.today.regulars.push(visit);
+    }
     return total;
   }
 
@@ -990,7 +1067,9 @@ export class GameEngine {
       grossProfit: t.revenue - t.cogs,
       rent: m.rent,
       wages: wagesDue,
-      net: t.revenue - t.cogs - m.rent - wagesDue - upkeepDue - taxDue,
+      net: t.revenue + t.tips - t.cogs - m.rent - wagesDue - upkeepDue - taxDue,
+      tips: t.tips,
+      regulars: t.regulars,
       upkeep: upkeepDue,
       tax: taxDue,
       died,
@@ -1021,6 +1100,8 @@ export class GameEngine {
       if (s.buffs[id] <= 0) delete s.buffs[id];
     }
     this._updateSharePrices(day);
+    this.track('profit', Math.max(0, summary.net));
+    summary.newAchievements = this.checkAchievements();
     s.day += 1;
     s.phase = 'idle';
     this.plan = [];

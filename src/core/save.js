@@ -88,6 +88,21 @@ export function validateState(s) {
   if (!Array.isArray(s.loans)) p.push('Pinjaman rusak');
   else for (const ln of s.loans) if (!nonNeg(ln.remaining) || ln.remaining < 1 || !nonNeg(ln.perDay) || !nonNeg(ln.daysLeft) || !nonNeg(ln.principal)) p.push('Data pinjaman tidak valid');
   if (!Array.isArray(s.history)) p.push('Riwayat rusak');
+  const st = s.stats;
+  if (!st || ![st.revenue, st.customers, st.bestDay, st.sold, st.bought, st.bred, st.questsDone].every(nonNeg)) p.push('Statistik rusak');
+  const q = s.quests;
+  if (!q || !isInt(q.dayId) || !isInt(q.weekId) || !Array.isArray(q.daily) || !Array.isArray(q.weekly)) p.push('Misi rusak');
+  else {
+    for (const x of [...q.daily, ...q.weekly]) {
+      if (!x || typeof x.id !== 'string' || !isInt(x.goal) || x.goal < 1 || !nonNeg(x.prog) || typeof x.claimed !== 'boolean') { p.push('Misi rusak'); break; }
+    }
+  }
+  if (!s.ach || typeof s.ach !== 'object') p.push('Pencapaian rusak');
+  else for (const a of Object.values(s.ach)) if (!a || !isInt(a.day) || typeof a.claimed !== 'boolean') { p.push('Pencapaian rusak'); break; }
+  if (!nonNeg(s.bonusPoints)) p.push('Poin bonus tidak valid');
+  if (!s.regulars || typeof s.regulars !== 'object') p.push('Langganan rusak');
+  else for (const r of Object.values(s.regulars)) if (!r || !nonNeg(r.bond) || !nonNeg(r.visits) || !nonNeg(r.last) || (r.claimed !== undefined && !nonNeg(r.claimed))) { p.push('Langganan rusak'); break; }
+  if (!s.tutorial || !nonNeg(s.tutorial.step) || typeof s.tutorial.done !== 'boolean') p.push('Tutorial rusak');
   return p;
 }
 

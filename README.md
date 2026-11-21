@@ -25,4 +25,5 @@ npm run build    # build produksi (dist/)
 - v3: kecepatan 4x/8x dibuka dengan upgrade Mesin Waktu, pajak progresif, perawatan, hewan sakit, pencurian
 - v3: karyawan Satpam dan Badut, Ramuan Obat, Renovasi Toko, statistik terlaris
 - v3: efek suara dan musik latar (dibuat dengan WebAudio), animasi loading
+- v4: misi harian/mingguan, 20 pencapaian, 12 pelanggan langganan (Buku Langganan, tip, hadiah level), tutorial 8 langkah, riwayat notifikasi, isi stok ke target, huruf besar dan kontras tinggi, tombol pasang aplikasi
 - PWA: bisa di-install dan jalan offline (siap PWA Builder)

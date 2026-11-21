@@ -91,9 +91,9 @@ describe('engine: hari berjalan', () => {
     const startStock = sumStock(e);
     const summary = runDay(e);
     expect(summary.soldUnits).toBe(startStock - sumStock(e));
-    expect(e.state.ledger.balance).toBe(startCash + summary.revenue - summary.rent);
+    expect(e.state.ledger.balance).toBe(startCash + summary.revenue + summary.tips - summary.rent);
     expect(summary.grossProfit).toBe(summary.revenue - summary.cogs);
-    expect(summary.net).toBe(summary.grossProfit - summary.rent - summary.wages);
+    expect(summary.net).toBe(summary.grossProfit + summary.tips - summary.rent - summary.wages);
     expect(auditLedger(e.state.ledger)).toEqual([]);
     expect(validateState(e.state)).toEqual([]);
   });
