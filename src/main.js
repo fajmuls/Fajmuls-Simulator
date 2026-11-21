@@ -86,11 +86,13 @@ async function boot() {
   const shop = new ShopScene(engine, {
     onReady: (s) => {
       scene = s;
+      s.setManual(ui.manual);
       ui.refreshHud();
       finishLoading();
       setTimeout(() => ui.startTutorial(), 2400);
     },
     onSale: () => audio.play('coin'),
+    onPickShelf: (cat) => ui.openPicker(cat),
     onTick: (tick) => ui.refreshHud(tick),
     onDayEnd: (summary) => {
       persist();

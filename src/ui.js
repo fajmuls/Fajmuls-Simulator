@@ -133,13 +133,35 @@ export class UI {
     this.refreshHud();
   }
 
+  // ---------- Pilih barang dari rak (mode manual) ----------
+  openPicker(catId) {
+    const scene = this.ctx.scene();
+    this.openSheet(`${CAT_EMOJI[catId]} Ambil dari rak`, () => {
+      const e = this.e;
+      const wanted = new Set((scene?.waitingOrders() || []).map((o) => o.itemId));
+      const out = [h('div', { class: 'sub' }, 'Pilih barang yang diminta pelanggan (📌), lalu ketuk pelanggannya untuk menyerahkan. Waktu berhenti selama kamu memilih.')];
+      const lots = e.stockLots().filter((l) => getItem(l.itemId).cat === catId);
+      if (!lots.length) out.push(h('div', { class: 'card' }, 'Rak kosong. Belanja dulu saat toko tutup.'));
+      for (const l of lots) {
+        const it = getItem(l.itemId);
+        out.push(h('button', { class: `card item${wanted.has(l.itemId) ? ' hero' : ''}`, 'data-cat': it.cat, style: 'text-align:left',
+          onClick: () => { scene?.setCarry(l.itemId, l.quality); audio.play('ok'); this.closeModal(); } },
+        h('div', { class: 'card-top' }, h('b', {}, `${wanted.has(l.itemId) ? '📌 ' : ''}${iname(it)}`), h('span', { class: 'price' }, rp(e.priceOf(l.itemId, l.quality)))),
+        h('div', { class: 'sub' }, `${getQuality(l.quality).name} ${qStars(l.quality)} · stok ${l.qty}`)));
+      }
+      return out;
+    });
+    scene?.setPaused(true);
+    this.pickerOpen = true;
+  }
+
   // ---------- Tutorial ----------
   tutorialSteps() {
     return [
       { mid: true, title: 'Selamat datang di Pasar Satwa! 🐾', text: 'Kamu pemilik toko hewan dan perlengkapannya. Tutorial singkat ini 8 langkah, bisa dilewati kapan saja.' },
       { el: () => this.tabs.grosir, title: '1. Belanja di Grosir', text: 'Beli stok cacing, pakan, dan hewan. Harga grosir berubah tiap hari, tombol +10 / +100 / Maks mempercepat.' },
       { el: () => this.tabs.harga, title: '2. Atur harga', text: 'Harga jual menentukan untung. Terlalu mahal, pelanggan pergi. Terlalu murah, untung tipis.' },
-      { el: () => this.goBtn, title: '3. Buka toko', text: 'Tekan Buka Toko. Pelanggan datang, memilih, antre, lalu bayar. Stok kosong berarti tidak ada penjualan.' },
+      { el: () => this.goBtn, title: '3. Buka toko', text: 'Tekan Buka Toko. Di mode 🖐 Manual, pelanggan antre dengan pesanan di atas kepalanya: ketuk rak untuk mengambil barang (waktu berhenti), lalu ketuk pelanggannya untuk menyerahkan. Cepat = tip 10%. Mode 🤖 Otomatis melayani sendiri.' },
       { el: () => this.speedBox, title: '4. Kecepatan', text: 'Percepat hari dengan 2x, 4x, 8x. Kecepatan di atas 1x dibuka lewat Upgrade Mesin Waktu.' },
       { el: () => this.hudQuest, title: '5. Misi harian', text: 'Selesaikan misi untuk hadiah uang dan poin skill. Ketuk untuk melihat dan mengambil hadiah.' },
       { el: () => this.tabs.fitur, title: '6. Fitur', text: 'Di sini ada Misi, Buku Langganan (pelanggan tetap yang makin akrab), Upgrade, Skill, Karyawan, Bank, dan lainnya.' },
@@ -253,7 +275,17 @@ export class UI {
       b.dataset.label = label;
       this.speedBox.append(b);
     }
-    dock.append(h('div', { class: 'dock-main' }, this.goBtn, this.speedBox), tabs);
+    let m = '1';
+    try { m = localStorage.getItem('pasarsatwa_manual') ?? '1'; } catch { /* abaikan */ }
+    this.manual = m === '1';
+    this.manualBtn = h('button', { class: 'btn secondary', onClick: () => {
+      this.manual = !this.manual;
+      try { localStorage.setItem('pasarsatwa_manual', this.manual ? '1' : '0'); } catch { /* abaikan */ }
+      this.ctx.scene()?.setManual(this.manual);
+      this.syncDock();
+      toast(this.manual ? 'Mode manual: kamu melayani pelanggan sendiri (tip cepat 10%)' : 'Mode otomatis: pelanggan dilayani sendiri');
+    } });
+    dock.append(h('div', { class: 'dock-main' }, this.goBtn, this.speedBox, this.manualBtn), tabs);
     this.syncDock();
   }
 
@@ -279,6 +311,7 @@ export class UI {
     for (const b of Object.values(this.tabs)) b.disabled = open && b.dataset.lock === '1';
     this.goBtn.textContent = open ? '⏹ Tutup Toko' : `▶ Buka Toko (Hari ${this.e.state.day})`;
     this.goBtn.classList.toggle('stop', open);
+    this.manualBtn.textContent = this.manual ? '🖐 Manual' : '🤖 Otomatis';
     for (const b of this.speedBox.children) {
       const sp = Number(b.dataset.s);
       const locked = sp > this.e.maxSpeed();
@@ -299,6 +332,7 @@ export class UI {
       }
       this.closeModal();
       this.speed = this.speed === 0 ? 1 : this.speed;
+      this.ctx.scene()?.setManual(this.manual);
       this.ctx.openShop();
       audio.play('open');
       this.ctx.setSpeed(this.speed);
@@ -329,6 +363,7 @@ export class UI {
   }
 
   closeModal() {
+    if (this.pickerOpen) { this.pickerOpen = false; this.ctx.scene()?.setPaused(false); }
     this.modal?.overlay.remove();
     this.modal = null;
   }

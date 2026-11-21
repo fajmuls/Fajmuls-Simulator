@@ -817,8 +817,8 @@ export class GameEngine {
 
   customerCount() {
     const s = this.state;
-    const base = 10 + s.reputation * 0.15 + Math.min(s.day, 60) * 0.2;
-    return clamp(Math.round(base * this.mods().count * this.priceAttract()), 3, 50);
+    const base = 12 + s.reputation * 0.1 + Math.min(s.day, 60) * 0.15;
+    return clamp(Math.round(base * this.mods().count * this.priceAttract()), 5, 1000);
   }
 
   _qtyCap(item) {
@@ -845,7 +845,7 @@ export class GameEngine {
         const pick = pickWeighted(rng, pool);
         pool.splice(pool.findIndex((p) => p.id === pick.id), 1);
         const cap = Math.min(type.maxQty, this._qtyCap(getItem(pick.id)));
-        wants.push({ itemId: pick.id, qty: 1 + Math.floor(rng() * cap), noise: 0.96 + rng() * 0.14 });
+        wants.push({ itemId: pick.id, qty: 1 + Math.floor(rng() * cap), noise: 1.0 + rng() * 0.08 });
       }
       return { id: `${s.day}-${i + 1}`, type: type.id, spawnAt: t, wants };
     });
@@ -875,12 +875,14 @@ export class GameEngine {
   }
 
   // Pelanggan melihat satu barang di rak. Stok langsung dipesan agar tidak terjual dua kali.
-  browse(customer, wantIdx) {
+  // given (opsional, mode manual): { itemId, quality } barang yang diserahkan pemain.
+  browse(customer, wantIdx, given = null) {
     if (this.state.phase !== 'open') throw new Error('Toko belum buka');
     const want = customer.wants[wantIdx];
+    if (given && given.itemId !== want.itemId) return { ok: false, itemId: want.itemId, reason: 'salah' };
     const type = this._typeOf(customer);
     const item = getItem(want.itemId);
-    const lots = this.stockLots().filter((l) => l.itemId === want.itemId);
+    const lots = this.stockLots().filter((l) => l.itemId === want.itemId && (!given || l.quality === given.quality));
     if (lots.length === 0) return { ok: false, itemId: want.itemId, reason: 'habis' };
 
     const m = this.mods();
@@ -910,7 +912,8 @@ export class GameEngine {
   }
 
   // Pelanggan membayar di kasir.
-  pay(customerId) {
+  // opts.fast: pelayanan manual yang cepat memberi tip 10%.
+  pay(customerId, opts = {}) {
     const list = this.reserved.get(customerId);
     if (!list || list.length === 0) return 0;
     const total = list.reduce((s, r) => s + r.revenue, 0);
@@ -936,12 +939,25 @@ export class GameEngine {
     for (const r of list) this.track('sell_cat', r.qty, { cat: getItem(parseLotKey(r.key).itemId).cat });
     const cust = this.plan.find((c) => c.id === customerId);
     if (cust?.type === 'vip') this.track('vip', 1);
+    if (opts.fast) {
+      const tip = Math.max(1, Math.round(total * 0.1));
+      credit(this.state.ledger, this.state.day, 'tip', tip, `Tip pelayanan cepat #${customerId}`);
+      this.today.tips += tip;
+    }
     if (cust?.regularId) {
       const visit = onRegularPaid(this, cust, list, total);
       this.today.tips += visit.tip;
       this.today.regulars.push(visit);
     }
     return total;
+  }
+
+  // Syarat pesanan untuk ditampilkan ke pemain (mode manual).
+  orderInfo(customer, wantIdx) {
+    const want = customer.wants[wantIdx];
+    const type = this._typeOf(customer);
+    const minQ = Math.max(type.minQuality, customer.request?.itemId === want.itemId ? customer.request.minQuality : 1);
+    return { itemId: want.itemId, qty: want.qty, minQuality: minQ };
   }
 
   customerLeft(customerId, satisfied) {

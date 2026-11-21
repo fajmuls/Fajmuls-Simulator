@@ -52,9 +52,9 @@ export const ITEMS = [
 ];
 
 export const CUSTOMER_TYPES = [
-  { id: 'biasa', name: 'Pembeli Biasa', weight: 0.6, wtp: 1.0, minQuality: 1, maxQty: 2, color: 0x3b82f6 },
-  { id: 'pelit', name: 'Si Pelit', weight: 0.25, wtp: 0.8, minQuality: 1, maxQty: 3, color: 0x84cc16 },
-  { id: 'vip', name: 'Pelanggan VIP', weight: 0.15, wtp: 1.35, minQuality: 3, maxQty: 2, color: 0xe11d48 },
+  { id: 'biasa', name: 'Pembeli Biasa', weight: 0.6, wtp: 1.1, minQuality: 1, maxQty: 2, color: 0x3b82f6 },
+  { id: 'pelit', name: 'Si Pelit', weight: 0.25, wtp: 1.0, minQuality: 1, maxQty: 3, color: 0x84cc16 },
+  { id: 'vip', name: 'Pelanggan VIP', weight: 0.15, wtp: 1.4, minQuality: 3, maxQty: 2, color: 0xe11d48 },
 ];
 
 // ---------- Reputasi dan bintang ----------

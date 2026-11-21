@@ -41,6 +41,11 @@ export class ShopScene extends Phaser.Scene {
     this.popups = [];
     this.shelfSprites = [];
     this._lastTick = '';
+    this.manual = false;
+    this.paused = false;
+    this.carry = null;
+    this.carryIcon = null;
+    this.playerTarget = null;
   }
 
   create() {
@@ -68,6 +73,8 @@ export class ShopScene extends Phaser.Scene {
     this.owner = this.add.image(272, 262, 'owner').setOrigin(0.5, 1).setDepth(262);
     this.ownerBaseY = 262;
 
+    this.playerX = 272;
+    this.input.on('pointerdown', (p) => this._onTap(p.worldX, p.worldY));
     this.refreshShelves();
     this.hooks.onReady?.(this);
   }
@@ -148,6 +155,8 @@ export class ShopScene extends Phaser.Scene {
     this.dayActive = true;
     this.customers = [];
     this.queue = [];
+    this.setCarry(null);
+    this.playerTarget = null;
     this.refreshShelves();
   }
 
@@ -160,9 +169,9 @@ export class ShopScene extends Phaser.Scene {
 
   // ---------- Siklus per frame ----------
   update(time, delta) {
-    this._animateOwner(time);
+    this._animateOwner(time, delta / 1000);
     this._updatePopups(delta / 1000);
-    if (!this.dayActive) return;
+    if (!this.dayActive || this.paused) return;
 
     const dt = Math.min(delta / 1000, 0.1) * this.speed;
     if (dt <= 0) return;
@@ -200,8 +209,135 @@ export class ShopScene extends Phaser.Scene {
     this.hooks.onDayEnd?.(summary);
   }
 
-  _animateOwner(time) {
-    this.owner.y = this.ownerBaseY + Math.sin(time / 400) * 1.2;
+  _animateOwner(time, dt = 0) {
+    const t = this.playerTarget;
+    let moving = false;
+    if (t) {
+      const dx = t.x - this.owner.x;
+      const dy = t.y - this.ownerBaseY;
+      const dist = Math.hypot(dx, dy);
+      const step = 150 * dt;
+      if (dist <= step) {
+        this.owner.x = t.x;
+        this.ownerBaseY = t.y;
+        this.playerTarget = null;
+        t.then?.();
+      } else {
+        this.owner.x += (dx / dist) * step;
+        this.ownerBaseY += (dy / dist) * step;
+        this.owner.setFlipX(dx < 0);
+        moving = true;
+      }
+    }
+    this.owner.y = this.ownerBaseY + Math.sin(time / (moving ? 90 : 400)) * (moving ? 1.8 : 1.2);
+    this.owner.setDepth(this.ownerBaseY + 1);
+    if (this.carryIcon) this.carryIcon.setPosition(this.owner.x, this.owner.y - 40).setDepth(9998);
+  }
+
+  // ---------- Mode manual: pemain bergerak, mengambil barang, menyerahkan ke pelanggan ----------
+  setManual(v) { this.manual = !!v; }
+
+  setPaused(v) { this.paused = !!v; }
+
+  setCarry(itemId, quality) {
+    this.carry = itemId ? { itemId, quality } : null;
+    this.carryIcon?.destroy();
+    this.carryIcon = itemId ? this.add.image(this.owner.x, this.owner.y - 40, `icon_${itemId}`).setScale(1.1) : null;
+  }
+
+  waitingOrders() {
+    return this.customers.filter((c) => c.state === 'waiting' && c.order).map((c) => c.order);
+  }
+
+  _goTo(x, y, then) {
+    this.playerTarget = { x: Math.max(16, Math.min(344, x)), y: Math.max(214, Math.min(346, y)), then };
+  }
+
+  _onTap(x, y) {
+    if (!this.dayActive || !this.manual || this.paused) return;
+    // pelanggan menunggu
+    const cust = this.customers.find((c) => c.state === 'waiting' && Math.abs(x - c.x) < 16 && y > c.y - 70 && y < c.y + 6);
+    if (cust) {
+      if (!this.carry) {
+        this._flash(cust.x, cust.y - 80, 'Ambil barangnya di rak dulu', '#fde68a');
+        return;
+      }
+      this._goTo(cust.x - 16, cust.y - 6, () => this._serve(cust));
+      return;
+    }
+    // rak
+    if (y > 48 && y < 132) {
+      const idx = CATEGORIES.findIndex((c, i) => Math.abs(x - shelfX(i)) < 35);
+      if (idx >= 0 && this.engine.categoryOpen(CATEGORIES[idx].id)) {
+        this._goTo(shelfX(idx), SHELF_STAND_Y + 26, () => this.hooks.onPickShelf?.(CATEGORIES[idx].id));
+        return;
+      }
+    }
+    this._goTo(x, Math.max(y, AISLE_Y));
+  }
+
+  _flash(x, y, text, color = '#fff') {
+    this._popup(x, y, text, color);
+  }
+
+  _beginOrder(c) {
+    c.state = 'waiting';
+    c.patience = c.maxPatience = 30;
+    c.order = this.engine.orderInfo(c.data, c.wantIdx);
+    this._clearBubble(c);
+    const o = c.order;
+    c.bubble = this._makeBubble(c, `${o.qty}× ${getItem(o.itemId).name.split(' ')[0]}${o.minQuality > 1 ? ' ★' + o.minQuality + '+' : ''}`, '#1e3a8a', o.itemId);
+    if (!c.bar) c.bar = this.add.rectangle(c.x, c.y - 36, 26, 3, 0x4ade80).setDepth(9999);
+    if (this.engine.totalQty(o.itemId) === 0) this._orderFail(c, 'habis');
+  }
+
+  _serve(c) {
+    if (c.state !== 'waiting' || !this.carry) return;
+    const res = this.engine.browse(c.data, c.wantIdx, this.carry);
+    if (!res.ok) {
+      const msg = { salah: 'Bukan itu!', kualitas: 'Kurang bagus', mahal: 'Kemahalan!', habis: 'Stok habis' }[res.reason] || '?';
+      this._flash(c.x, c.y - 80, msg, '#fca5a5');
+      if (res.reason === 'mahal' || res.reason === 'kualitas') {
+        if (res.reason === 'kualitas' || res.reason === 'mahal') c.patience -= 3;
+      } else c.patience -= 6;
+      if (res.reason === 'habis') this.setCarry(null);
+      return;
+    }
+    c.bought = true;
+    this.setCarry(null);
+    this.hooks.onSale?.(res.total);
+    this._flash(c.x, c.y - 80, '👍', '#86efac');
+    this.refreshShelves();
+    this._nextWant(c);
+  }
+
+  _orderFail(c, reason) {
+    const msg = { habis: 'Habis...', sabar: 'Lama sekali!', mahal: 'Kemahalan!', kualitas: 'Kurang bagus' }[reason] || '...';
+    this._clearBubble(c);
+    c.bubble = this._makeBubble(c, msg, '#991b1b');
+    c.state = 'failing';
+    c.timer = 1.0;
+    c.failReason = reason;
+  }
+
+  _nextWant(c) {
+    c.wantIdx += 1;
+    if (c.wantIdx < c.data.wants.length) { this._beginOrder(c); return; }
+    this._finishManual(c);
+  }
+
+  _finishManual(c) {
+    this._clearBubble(c);
+    c.bar?.destroy();
+    c.bar = null;
+    this.queue = this.queue.filter((q) => q !== c);
+    if (c.bought) {
+      const total = this.engine.pay(c.data.id, { fast: c.patience > c.maxPatience * 0.5 });
+      if (total > 0) this._popup(c.x, c.y - 50, '+' + rupiah(total), '#facc15');
+      this._leave(c, true);
+    } else {
+      this._leave(c, false);
+    }
   }
 
   // ---------- Pelanggan ----------
@@ -220,8 +356,11 @@ export class ShopScene extends Phaser.Scene {
         fontFamily: 'monospace', fontSize: '9px', color: '#2b1604', backgroundColor: '#fbbf24', padding: { x: 3, y: 1 },
       }).setOrigin(0.5, 1).setDepth(9999);
     }
+    c.manual = this.manual && !data.regularId ? true : this.manual;
     this.customers.push(c);
-    this._routeToShelf(c);
+    if (c.manual) {
+      if (this.queue.length >= 7) { this._popup(c.x + 10, c.y - 30, 'Antre penuh', '#fca5a5'); this._leave(c, false); } else this._routeToQueue(c);
+    } else this._routeToShelf(c);
   }
 
   _pushWaypoints(c, pts, then) {
@@ -297,7 +436,7 @@ export class ShopScene extends Phaser.Scene {
     const pts = [{ x: c.x, y: AISLE_Y }];
     if (sx >= 230) pts.push({ x: 224, y: AISLE_Y }, { x: 224, y: PAY_Y }, { x: sx, y: PAY_Y });
     else pts.push({ x: sx, y: AISLE_Y }, { x: sx, y: PAY_Y });
-    this._pushWaypoints(c, pts, () => { c.state = 'queued'; });
+    this._pushWaypoints(c, pts, () => { if (c.manual) this._beginOrder(c); else c.state = 'queued'; });
   }
 
   _slotX(k) {
@@ -319,6 +458,7 @@ export class ShopScene extends Phaser.Scene {
   _remove(c) {
     this._clearBubble(c);
     c.tag?.destroy();
+    c.bar?.destroy();
     c.sprite.destroy();
     this.customers = this.customers.filter((x) => x !== c);
   }
@@ -356,6 +496,14 @@ export class ShopScene extends Phaser.Scene {
         c.then = null;
         next?.();
       }
+    } else if (c.state === 'waiting') {
+      c.patience -= dt;
+      const f = Math.max(0, c.patience / c.maxPatience);
+      c.bar?.setSize(26 * f, 3).setFillStyle(f > 0.5 ? 0x4ade80 : f > 0.25 ? 0xfacc15 : 0xef4444);
+      if (c.patience <= 0) this._orderFail(c, 'sabar');
+    } else if (c.state === 'failing') {
+      c.timer -= dt;
+      if (c.timer <= 0) { c.bar?.setSize(26, 3); this._nextWant(c); }
     } else if (c.state === 'browse') {
       c.timer -= dt;
       if (c.timer <= 0) this._afterBrowse(c);
@@ -374,6 +522,7 @@ export class ShopScene extends Phaser.Scene {
     c.sprite.setPosition(c.x, c.y);
     c.sprite.setDepth(c.y);
     c.tag?.setPosition(c.x, c.y - 72);
+    c.bar?.setPosition(c.x, c.y - 36);
     if (c.bubble) {
       c.bubble.t.setPosition(c.x, c.y - 40);
       c.bubble.icon?.setPosition(c.x, c.y - 58);
@@ -383,7 +532,7 @@ export class ShopScene extends Phaser.Scene {
   _updateQueue(dt) {
     this.queue.forEach((c, k) => {
       c.slot = k;
-      if (c.state !== 'queued' && c.state !== 'paying') return;
+      if (c.state !== 'queued' && c.state !== 'paying' && c.state !== 'waiting' && c.state !== 'failing') return;
       const tx = this._slotX(k);
       const dx = tx - c.x;
       if (Math.abs(dx) > 0.5) {
