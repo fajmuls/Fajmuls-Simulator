@@ -2,7 +2,7 @@
 import { ITEMS, CATEGORIES, getItem, itemsOf } from './core/catalog.js';
 import {
   RARITIES, FEEDS, EGGS, PET_KINDS, SLOT_COSTS, MAX_SLOTS, GROW_SEC, DEALER_RATE, PET_MAX,
-  rarityIdx, rarityWeights, animalValue, sizeLabel, petBuffValue, getPetKind, expectedMult, growMs,
+  rarityIdx, rarityWeights, animalValue, sizeLabel, petBuffValue, getPetKind, expectedMult, growMs, getHabitat, slotsOfHab,
 } from './core/farm.js';
 import { UI, h, rp, toast, rarOf, CAT_EMOJI } from './ui.js';
 import { audio } from './audio.js';
@@ -24,95 +24,160 @@ function oddsBar(luck) {
     h('i', { style: `background:${r.color}` }), h('span', {}, `${r.name.slice(0, 3)} ${pct(ws[i])}`))));
 }
 
-// ---------- Kolam ----------
-P.openKolam = function openKolam() {
+// ---------- Lahan di peta ----------
+const hab = (id) => getHabitat(id);
+
+P.tapPlot = function tapPlot({ slot, hab: habId, buy }) {
   const e = this.e;
-  const unlocked = () => e.unlockedItems();
-  if (!this.plantSel || !e.isUnlocked(this.plantSel.itemId)) this.plantSel = { itemId: unlocked()[0].id, feed: null };
-  let lastReady = '';
-  const readyKey = () => e.state.farm.slots.map((_, i) => (e.slotProgress(i)?.ready ? 1 : 0)).join('');
-  this.openSheet('🌱 Kolam & Kandang', () => {
+  if (buy) return this.openBuyPlot(habId);
+  const pr = e.slotProgress(slot);
+  if (pr?.ready) return this.harvestUI(slot);
+  return this.openPlot(slot);
+};
+
+P.tapBuilding = function tapBuilding(id) {
+  if (id === 'pasar') return this.openPasar();
+  if (id === 'pet') return this.openPet();
+  if (id === 'kantor') return this.openMenu();
+  if (id === 'npc') return this.openNpc();
+  return null;
+};
+
+P.openKolam = function openKolam() { this.ctx.travel('kolam'); };
+P.openKandang = function openKandang() { this.ctx.travel('kandang'); };
+
+P.openBuyPlot = function openBuyPlot(habId) {
+  const e = this.e;
+  const H = hab(habId);
+  const fm = e.state.farm;
+  this.openSheet(`Bangun ${H.one} baru`, () => {
+    const cost = SLOT_COSTS[fm.slots.length];
+    const have = fm.habs.filter((x) => x === habId).length;
+    const bal = e.state.ledger.balance;
+    return [
+      h('div', { class: 'card hero' }, h('b', {}, H.name), h('div', { class: 'sub' }, `Sekarang ${have} dari maksimal ${H.max}. Lahan baru memperbanyak hewan yang bisa dipanen bersamaan.`)),
+      h('div', { class: 'card' },
+        h('div', { class: 'card-top' }, h('b', {}, 'Biaya'), h('span', { class: 'price' }, cost ? rp(cost) : 'Gratis')),
+        h('div', { class: 'sub' }, `Kas kamu ${rp(bal)}`),
+        h('button', { class: 'btn', disabled: have >= H.max || bal < cost || fm.slots.length >= MAX_SLOTS,
+          onClick: () => { this.act(() => e.buySlot(habId), `${H.one} baru dibuka!`, 'upgrade'); this.ctx.scene()?.refreshFarm(); this.closeModal(); } }, `Bangun ${H.one}`)),
+    ];
+  });
+};
+
+P.openPlot = function openPlot(i) {
+  const e = this.e;
+  const fm0 = e.state.farm;
+  const H = hab(fm0.habs[i]);
+  const speciesOf = () => e.unlockedItems().filter((it) => H.cats.includes(it.cat));
+  this.plantSel = this.plantSel || { itemId: null, feed: null };
+  let lastState = '';
+  const stateKey = () => `${e.state.farm.slots[i] ? 1 : 0}${e.slotProgress(i)?.ready ? 1 : 0}`;
+  this.openSheet(`${H.one} ${slotsOfHab(e, H.id).indexOf(i) + 1}`, () => {
     const fm = e.state.farm;
-    const sel = this.plantSel;
-    const item = getItem(sel.itemId);
+    const slot = fm.slots[i];
     const out = [];
-    const feedLuck = (sel.feed ? FEEDS.find((f) => f.id === sel.feed).luck : 0) + e.farmBuffs().luck * 10;
-
-    const ready = fm.slots.filter((_, i) => e.slotProgress(i)?.ready).length;
-    out.push(h('div', { class: 'row' },
-      h('div', { class: 'grow sub' }, `Kas ${rp(e.state.ledger.balance)} · hewan di kandang ${fm.animals.length}`),
-      ready ? h('button', { class: 'btn small', onClick: () => this.harvestAllUI() }, `🌾 Panen semua (${ready})`) : null));
-
-    // Pilihan tanam
-    out.push(h('div', { class: 'card' },
-      h('b', {}, 'Yang mau ditanam'),
-      h('div', { class: 'chips' }, unlocked().map((it) => h('button', { class: `chip${it.id === sel.itemId ? ' on' : ''}`, onClick: () => { sel.itemId = it.id; this.rerender(); } },
-        svgEl(animalSVG(it), 18), ' ', it.name.split(' ').slice(-1)[0], ` ×${fm.bibit[it.id] || 0}`))),
-      h('div', { class: 'sub' }, `Bibit ${item.name}: punya ${fm.bibit[sel.itemId] || 0} · tumbuh ${mmss(growMs(e, sel.itemId, sel.feed))} · harga bibit di Pasar ${rp(e.bibitPrice(sel.itemId))}`),
-      h('b', {}, 'Pakan (opsional)'),
-      h('div', { class: 'chips' },
-        h('button', { class: `chip${!sel.feed ? ' on' : ''}`, onClick: () => { sel.feed = null; this.rerender(); } }, 'Tanpa pakan'),
-        FEEDS.map((f) => h('button', { class: `chip${sel.feed === f.id ? ' on' : ''}`, onClick: () => { sel.feed = f.id; this.rerender(); } },
-          svgEl(feedSVG(f), 18), ` ${f.name.replace('Pakan ', '')} ×${fm.feeds[f.id] || 0}`))),
-      h('div', { class: 'sub' }, `Nilai rata-rata hasil ≈ ${expectedMult(feedLuck).toFixed(2)}× harga dasar. Peluang rarity:`),
-      oddsBar(feedLuck)));
-
-    // Kolam
-    fm.slots.forEach((slot, i) => {
-      if (!slot) {
-        const have = (fm.bibit[sel.itemId] || 0) > 0;
-        const feedOk = !sel.feed || (fm.feeds[sel.feed] || 0) > 0;
-        out.push(h('div', { class: 'card' },
-          h('div', { class: 'card-top' }, h('b', {}, `Kolam ${i + 1}`), h('span', { class: 'sub' }, 'kosong')),
-          h('button', { class: 'btn small', disabled: !have || !feedOk, onClick: () => this.act(() => e.plant(i, sel.itemId, sel.feed), `Menanam ${item.name}`, 'ok') },
-            !have ? `Bibit ${item.name} habis (beli di Pasar)` : !feedOk ? 'Pakan habis (beli di Pasar)' : `Tanam ${item.name}`)));
-        return;
-      }
+    lastState = stateKey();
+    if (slot) {
       const it = getItem(slot.itemId);
       const pr = e.slotProgress(i);
       const feed = slot.feed ? FEEDS.find((f) => f.id === slot.feed) : null;
       out.push(h('div', { class: `card${pr.ready ? ' hero' : ''}` },
-        h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px' },
-          svgEl(animalSVG(it), 44, pr.ready ? 'bounce' : ''),
-          h('div', { class: 'grow' },
-            h('div', { class: 'card-top' }, h('b', {}, `Kolam ${i + 1} · ${it.name}`), h('span', { class: 'sub', 'data-t': i }, pr.ready ? 'SIAP!' : mmss(pr.remainMs))),
-            h('div', { class: 'meter' }, h('i', { 'data-b': i, style: `width:${Math.round(pr.pct * 100)}%` })),
-            h('div', { class: 'sub' }, feed ? `Pakan: ${feed.name}` : 'Tanpa pakan'))),
-        pr.ready ? h('button', { class: 'btn small', onClick: () => this.harvestUI(i) }, '🌾 Panen') : null));
-    });
-
-    if (fm.slots.length < MAX_SLOTS) {
-      const cost = SLOT_COSTS[fm.slots.length];
-      out.push(h('button', { class: 'btn secondary', disabled: e.state.ledger.balance < cost, onClick: () => this.act(() => e.buySlot(), 'Kolam baru dibuka!', 'upgrade') }, `➕ Tambah kolam ke-${fm.slots.length + 1} (${cost ? rp(cost) : 'gratis'})`));
+        h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px' }, svgEl(animalSVG(it), 64, pr.ready ? 'bounce' : ''),
+          h('div', { class: 'grow' }, h('b', {}, it.name), h('div', { class: 'sub' }, feed ? `Pakan: ${feed.name}` : 'Tanpa pakan'),
+            h('div', { class: 'sub', 'data-t': i }, pr.ready ? 'SIAP PANEN!' : `Sisa ${mmss(pr.remainMs)}`))),
+        h('div', { class: 'meter' }, h('i', { 'data-b': i, style: `width:${Math.round(pr.pct * 100)}%` }))));
+      out.push(pr.ready
+        ? h('button', { class: 'btn', onClick: () => { this.closeModal(); this.harvestUI(i); } }, 'Panen sekarang')
+        : h('div', { class: 'sub' }, 'Sabar ya, hewanmu sedang tumbuh. Ketuk lahan lagi saat sudah siap.'));
+      return out;
     }
-    lastReady = readyKey();
+    const list = speciesOf();
+    if (!list.length) {
+      out.push(h('div', { class: 'card warn' }, h('b', {}, `Belum ada spesies untuk ${H.name}`), h('div', { class: 'sub' }, H.id === 'kandang' ? 'Naikkan Toko ke Lv 2 untuk membuka burung dan satwa kecil.' : 'Buka spesies baru di menu.')));
+      return out;
+    }
+    const sel = this.plantSel;
+    if (!sel.itemId || !list.some((x) => x.id === sel.itemId)) sel.itemId = list[0].id;
+    const item = getItem(sel.itemId);
+    const have = fm.bibit[sel.itemId] || 0;
+    const feedOk = !sel.feed || (fm.feeds[sel.feed] || 0) > 0;
+    const feedLuck = (sel.feed ? FEEDS.find((f) => f.id === sel.feed).luck : 0) + e.farmBuffs().luck * 10;
+    out.push(h('div', { class: 'chips wrap' }, list.map((it) => h('button', { class: `chip${it.id === sel.itemId ? ' on' : ''}`, onClick: () => { sel.itemId = it.id; this.rerender(); } },
+      svgEl(animalSVG(it), 18), ' ', it.name.split(' ').slice(-1)[0], ` ×${fm.bibit[it.id] || 0}`))));
+    out.push(h('div', { class: 'card' },
+      h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px' }, svgEl(animalSVG(item), 52),
+        h('div', { class: 'grow' }, h('b', {}, item.name), h('div', { class: 'sub' }, `Bibit punya ${have} · tumbuh ${mmss(growMs(e, sel.itemId, sel.feed))}`),
+          h('div', { class: 'sub' }, `Harga bibit ${rp(e.bibitPrice(sel.itemId))}`)))));
+    out.push(h('div', { class: 'card' },
+      h('b', {}, 'Pakan (opsional)'),
+      h('div', { class: 'chips wrap' },
+        h('button', { class: `chip${!sel.feed ? ' on' : ''}`, onClick: () => { sel.feed = null; this.rerender(); } }, 'Tanpa'),
+        FEEDS.map((f) => h('button', { class: `chip${sel.feed === f.id ? ' on' : ''}`, onClick: () => { sel.feed = f.id; this.rerender(); } },
+          svgEl(feedSVG(f), 18), ` ${f.name.replace('Pakan ', '')} ×${fm.feeds[f.id] || 0}`))),
+      h('div', { class: 'sub' }, `Nilai rata-rata ≈ ${expectedMult(feedLuck).toFixed(2)}× harga dasar`),
+      oddsBar(feedLuck)));
+    if (!have) {
+      out.push(h('button', { class: 'btn secondary', onClick: () => { this.closeModal(); this.ctx.travel('pasar', () => this.openPasar()); } }, `Bibit habis, ke Pasar`));
+    } else {
+      out.push(h('button', { class: 'btn', disabled: !feedOk,
+        onClick: () => { this.act(() => e.plant(i, sel.itemId, sel.feed), `Menanam ${item.name}`, 'ok'); this.ctx.scene()?.refreshFarm(); this.closeModal(); } },
+      feedOk ? `Tanam ${item.name}` : 'Pakan habis, beli di Pasar'));
+    }
     return out;
   });
-  // Perbarui bilah kemajuan tiap detik tanpa membangun ulang layar (agar tombol tidak hilang saat ditekan).
   this.modalTimer = setInterval(() => {
     if (!this.modal) return;
-    if (readyKey() !== lastReady) { this.rerender(); return; }
-    e.state.farm.slots.forEach((slot, i) => {
-      if (!slot) return;
-      const pr = e.slotProgress(i);
-      const b = this.modal.body.querySelector(`[data-b="${i}"]`);
-      const t = this.modal.body.querySelector(`[data-t="${i}"]`);
-      if (b) b.style.width = `${Math.round(pr.pct * 100)}%`;
-      if (t) t.textContent = pr.ready ? 'SIAP!' : mmss(pr.remainMs);
-    });
+    if (stateKey() !== lastState) { this.rerender(); return; }
+    const slot = e.state.farm.slots[i];
+    if (!slot) return;
+    const pr = e.slotProgress(i);
+    const b = this.modal.body.querySelector(`[data-b="${i}"]`);
+    const t = this.modal.body.querySelector(`[data-t="${i}"]`);
+    if (b) b.style.width = `${Math.round(pr.pct * 100)}%`;
+    if (t) t.textContent = pr.ready ? 'SIAP PANEN!' : `Sisa ${mmss(pr.remainMs)}`;
   }, 500);
 };
 
+P.showReveal = function showReveal(a, extra = 0) {
+  if (!a) return;
+  const it = getItem(a.itemId);
+  const r = rarOf(a);
+  const big = rarityIdx(a.rarity) >= 3;
+  const card = h('div', { class: `reveal-card${big ? ' big' : ''}`, style: `--rc:${r.color}` },
+    svgEl(animalSVG(it), 110),
+    h('div', { class: 'rname', style: `color:${r.color}` }, r.name),
+    h('h3', {}, it.name),
+    h('div', { class: 'sub' }, `${sizeLabel(a.itemId, a.size)} · ≈ ${rp(animalValue(a))}`),
+    extra > 0 ? h('div', { class: 'sub' }, `+${extra} hewan lain masuk kandang`) : null);
+  const ov = h('div', { class: 'reveal', onClick: () => ov.remove() }, card);
+  document.body.append(ov);
+  setTimeout(() => ov.remove(), big ? 2800 : 1800);
+};
+
 P.harvestUI = function harvestUI(i) {
-  this.act(() => this.e.harvest(i), (a) => this.harvestMsg(a), null);
-  this.playHarvest(this.e.state.farm.animals.at(-1));
+  const sc = this.ctx.scene();
+  const at = sc?.plotCenter?.(i);
+  let got = null;
+  this.act(() => { got = this.e.harvest(i); return got; }, null, null);
+  if (!got) return;
+  const a = this.e.state.farm.animals.at(-1) || got;
+  this.playHarvest(a);
+  sc?.refreshFarm();
+  if (at) sc.burst(at.x, at.y, rarityIdx(a.rarity) >= 3 ? 0xffd84d : 0xffffff, 14);
+  this.showReveal(a);
+  toast(this.harvestMsg(a), 'ok');
 };
 
 P.harvestAllUI = function harvestAllUI() {
   const got = [];
-  this.act(() => { got.push(...this.e.harvestAll()); return got; }, (list) => `Panen ${list.length} hewan${list.some((a) => rarityIdx(a.rarity) >= 2) ? ' — ada yang langka! ✨' : ''}`, null);
-  const best = got.sort((a, b) => rarityIdx(b.rarity) - rarityIdx(a.rarity))[0];
-  if (best) this.playHarvest(best);
+  this.act(() => { got.push(...this.e.harvestAll()); return got; }, null, null);
+  const best = got.slice().sort((a, b) => rarityIdx(b.rarity) - rarityIdx(a.rarity))[0];
+  if (!best) return;
+  this.playHarvest(best);
+  this.ctx.scene()?.refreshFarm();
+  this.showReveal(best, got.length - 1);
+  toast(`Panen ${got.length} hewan`, 'ok');
 };
 
 P.harvestMsg = function harvestMsg(a) {
@@ -128,7 +193,7 @@ P.playHarvest = function playHarvest(a) {
 
 // ---------- Pasar ----------
 P.openPasar = function openPasar() {
-  this.openSheet('🛒 Pasar', () => {
+  this.openSheet('Pasar', () => {
     const e = this.e;
     const fm = e.state.farm;
     const bal = e.state.ledger.balance;
@@ -169,7 +234,7 @@ P.openPasar = function openPasar() {
 // ---------- Koleksi dan kandang ----------
 P.openKoleksi = function openKoleksi() {
   this.koleksiTab ||= 'kandang';
-  this.openSheet('📖 Koleksi', () => {
+  this.openSheet('Koleksi', () => {
     const e = this.e;
     const fm = e.state.farm;
     const out = [this.chips([{ id: 'kandang', label: `Kandang (${fm.animals.length})` }, { id: 'buku', label: 'Buku Koleksi' }], this.koleksiTab, (id) => { this.koleksiTab = id; this.rerender(); })];
@@ -211,7 +276,7 @@ P.openKoleksi = function openKoleksi() {
 
 // ---------- Pet ----------
 P.openPet = function openPet() {
-  this.openSheet('🐾 Pet', () => {
+  this.openSheet('Pet', () => {
     const e = this.e;
     const pets = e.state.pets;
     const bal = e.state.ledger.balance;

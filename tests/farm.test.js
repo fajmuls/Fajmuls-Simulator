@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GameEngine, newState } from '../src/core/engine.js';
+import { GameEngine, newState, migrate } from '../src/core/engine.js';
 import { auditLedger } from '../src/core/ledger.js';
 import { validateState, serialize, deserialize } from '../src/core/save.js';
 import { RARITIES, rarityWeights, rollRarity, expectedMult, FEEDS, EGGS, animalValue, PET_KINDS } from '../src/core/farm.js';
@@ -56,16 +56,44 @@ describe('peternakan', () => {
   });
 
   it('hasil panen deterministik untuk benih yang sama', () => {
-    const run = () => { const { e, clock } = mk(5); const out = []; for (let i = 0; i < 6; i++) { e.buyBibit('cacing', 1); e.plant(i % 3, 'cacing', null); clock.t += 60_000; out.push(e.harvest(i % 3)); } return out; };
+    const run = () => { const { e, clock } = mk(5); const out = []; for (let i = 0; i < 6; i++) { e.buyBibit('cacing', 1); e.plant(0, 'cacing', null); clock.t += 60_000; out.push(e.harvest(0)); } return out; };
     expect(run()).toEqual(run());
   });
 
   it('kolam tambahan dibayar sesuai harga dan ada batasnya', () => {
     const { e } = mk();
     e.state.ledger.balance = 10_000_000; e.state.ledger.opening = 10_000_000;
-    for (let i = 0; i < 6; i++) e.buySlot();
-    expect(e.state.farm.slots.length).toBe(9);
+    for (let i = 0; i < 8; i++) e.buySlot();
+    expect(e.state.farm.slots.length).toBe(11);
+    expect(e.state.farm.habs.length).toBe(11);
     expect(() => e.buySlot()).toThrow();
+  });
+
+  it('habitat membatasi spesies: ikan hanya di kolam, burung hanya di kandang', () => {
+    const { e } = mk();
+    e.state.ledger.balance = 5_000_000; e.state.ledger.opening = 5_000_000;
+    e.buyBibit('lele', 1); e.buyBibit('cacing', 1);
+    expect(() => e.plant(0, 'lele', null)).toThrow(); // slot 0 = kebun
+    expect(() => e.plant(1, 'cacing', null)).toThrow(); // slot 1 = kolam
+    e.plant(1, 'lele', null);
+    e.plant(0, 'cacing', null);
+    expect(() => e.buySlot('kebun')).not.toThrow();
+    expect(() => e.buySlot('kebun')).toThrow(); // kebun maksimum 2
+    e.buySlot('kandang');
+    expect(e.state.farm.habs.at(-1)).toBe('kandang');
+  });
+
+  it('simpanan v5 dimigrasi ke v6 dengan habitat dan cerita', () => {
+    const e0 = new GameEngine(newState(3));
+    const old = JSON.parse(JSON.stringify(e0.state));
+    old.v = 5; delete old.farm.habs; delete old.story;
+    old.farm.slots = [null, { itemId: 'lele', feed: null, plantedAt: 1, readyAt: 2, cost: 5 }, null, null];
+    const m = migrate(old);
+    expect(m.v).toBe(6);
+    expect(m.farm.habs.length).toBe(4);
+    expect(m.farm.habs[1]).toBe('kolam');
+    expect(m.story.ch).toBe(0);
+    expect(validateState(m)).toEqual([]);
   });
 });
 

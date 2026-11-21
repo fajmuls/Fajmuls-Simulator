@@ -150,6 +150,23 @@ const UI_ICONS = {
   pet: `<ellipse cx="24" cy="32" rx="11" ry="9" fill="#fb923c" ${st}/><ellipse cx="10" cy="20" rx="4.5" ry="6" fill="#fb923c" ${st}/><ellipse cx="38" cy="20" rx="4.5" ry="6" fill="#fb923c" ${st}/><ellipse cx="18" cy="10" rx="4.5" ry="6" fill="#fb923c" ${st}/><ellipse cx="30" cy="10" rx="4.5" ry="6" fill="#fb923c" ${st}/>`,
   fitur: `<rect x="6" y="6" width="16" height="16" rx="4" fill="#38bdf8" ${st}/><rect x="26" y="6" width="16" height="16" rx="4" fill="#fbbf24" ${st}/><rect x="6" y="26" width="16" height="16" rx="4" fill="#4ade80" ${st}/><rect x="26" y="26" width="16" height="16" rx="4" fill="#f472b6" ${st}/>`,
   menu: `<rect x="6" y="9" width="36" height="6" rx="3" fill="#e5e7eb" ${st}/><rect x="6" y="21" width="36" height="6" rx="3" fill="#e5e7eb" ${st}/><rect x="6" y="33" width="36" height="6" rx="3" fill="#e5e7eb" ${st}/>`,
+
+  kandang: `<path d="M5 20 L24 5 L43 20 Z" fill="#ef4444" ${st}/><rect x="8" y="20" width="32" height="22" fill="#fff6d1" ${st}/><path d="M16 22 V42 M24 22 V42 M32 22 V42" ${st} fill="none"/><path d="M8 32 H40" stroke="#c98a4a" stroke-width="3"/>`,
+  toko: `<path d="M5 18 L9 6 H39 L43 18 Z" fill="#ef4444" ${st}/><path d="M5 18 C5 24 14 24 14 18 C14 24 24 24 24 18 C24 24 34 24 34 18 C34 24 43 24 43 18" fill="#fff" ${st}/><rect x="9" y="24" width="30" height="18" fill="#ffe9bb" ${st}/><rect x="20" y="30" width="9" height="12" fill="#a8693a" ${st}/>`,
+  misi: `<circle cx="24" cy="24" r="18" fill="#fff" ${st}/><circle cx="24" cy="24" r="12" fill="#ef4444" ${st}/><circle cx="24" cy="24" r="6" fill="#fff" ${st}/><circle cx="24" cy="24" r="2.2" fill="#ef4444"/>`,
+  langganan: `<path d="M24 42 C6 30 6 14 16 12 C20 11 23 14 24 16 C25 14 28 11 32 12 C42 14 42 30 24 42 Z" fill="#fb7185" ${st}/><path d="M14 18 q3 -3 6 -1" fill="none" stroke="#fff" stroke-width="2.4"/>`,
+  hewan: `<ellipse cx="24" cy="30" rx="15" ry="11" fill="#f59e0b" ${st}/><circle cx="36" cy="20" r="8" fill="#f59e0b" ${st}/><circle cx="38" cy="18" r="1.8" fill="${OUT}"/><path d="M43 21 L48 23 L43 25" fill="#ef4444" ${st}/><path d="M18 40 V45 M28 40 V45" ${st} fill="none"/>`,
+  bintang: `<path d="M24 4 L30 18 L45 19 L33.5 29 L37 44 L24 36 L11 44 L14.5 29 L3 19 L18 18 Z" fill="#fde047" ${st}/>`,
+  skill: `<path d="M24 44 V22" ${st} fill="none"/><path d="M24 26 Q8 24 8 8 Q24 8 24 26 Z M24 32 Q40 30 40 14 Q24 14 24 32 Z" fill="#4ade80" ${st}/>`,
+  upgrade: `<path d="M24 4 L40 22 H30 V42 H18 V22 H8 Z" fill="#38bdf8" ${st}/>`,
+  ramuan: `<path d="M18 6 H30 V16 L40 36 Q42 44 34 44 H14 Q6 44 8 36 L18 16 Z" fill="#c084fc" ${st}/><path d="M12 32 H36" stroke="#fff" stroke-width="3"/><circle cx="20" cy="38" r="2.4" fill="#fff"/><circle cx="29" cy="35" r="1.8" fill="#fff"/>`,
+  karyawan: `<circle cx="17" cy="16" r="7" fill="#fcd9b6" ${st}/><path d="M4 42 Q4 26 17 26 Q30 26 30 42 Z" fill="#3b82f6" ${st}/><circle cx="33" cy="20" r="6" fill="#fcd9b6" ${st}/><path d="M24 42 Q24 30 33 30 Q44 30 44 42 Z" fill="#10b981" ${st}/>`,
+  bank: `<path d="M4 18 L24 5 L44 18 Z" fill="#fde047" ${st}/><rect x="9" y="20" width="6" height="18" fill="#fff" ${st}/><rect x="21" y="20" width="6" height="18" fill="#fff" ${st}/><rect x="33" y="20" width="6" height="18" fill="#fff" ${st}/><rect x="5" y="38" width="38" height="6" rx="2" fill="#fde047" ${st}/>`,
+  investasi: `<rect x="6" y="28" width="9" height="14" fill="#4ade80" ${st}/><rect x="19" y="18" width="9" height="24" fill="#38bdf8" ${st}/><rect x="32" y="8" width="9" height="34" fill="#f472b6" ${st}/>`,
+  laporan: `<rect x="9" y="5" width="30" height="38" rx="4" fill="#fff" ${st}/><path d="M15 16 H33 M15 24 H33 M15 32 H26" ${st} fill="none"/>`,
+  cerita: `<path d="M5 10 Q15 6 24 12 Q33 6 43 10 V38 Q33 34 24 40 Q15 34 5 38 Z" fill="#fff6d1" ${st}/><path d="M24 12 V40" ${st} fill="none"/><path d="M11 18 Q16 16 20 19 M11 25 Q16 23 20 26 M28 19 Q32 16 37 18 M28 26 Q32 23 37 25" fill="none" stroke="${OUT}" stroke-width="1.6"/>`,
+  pengaturan: `<circle cx="24" cy="24" r="8" fill="#e5e7eb" ${st}/><path d="M24 4 V10 M24 38 V44 M4 24 H10 M38 24 H44 M10 10 L14 14 M34 34 L38 38 M38 10 L34 14 M10 38 L14 34" ${st} fill="none"/><circle cx="24" cy="24" r="14" fill="none" ${st}/>`,
+  peta: `<path d="M5 12 L17 8 L31 12 L43 8 V38 L31 42 L17 38 L5 42 Z" fill="#a7f3d0" ${st}/><path d="M17 8 V38 M31 12 V42" ${st} fill="none"/><circle cx="24" cy="22" r="4" fill="#ef4444" ${st}/>`,
   coin: `<circle cx="24" cy="24" r="18" fill="#fbbf24" ${st}/><circle cx="24" cy="24" r="12" fill="none" stroke="#b45309" stroke-width="2"/><path d="M24 15 V33 M19 19 C19 15 29 15 29 20 C29 25 19 23 19 28 C19 33 29 33 29 29" fill="none" stroke="#b45309" stroke-width="2.2"/>`,
 };
 export const uiIconSVG = (name) => wrap(UI_ICONS[name] || UI_ICONS.menu);

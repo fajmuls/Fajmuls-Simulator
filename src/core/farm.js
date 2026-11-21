@@ -33,9 +33,20 @@ export const getFeed = (id) => {
 // detik tumbuh per tier (pada tanpa pakan)
 export const GROW_SEC = [45, 70, 100, 140, 200];
 export const BIBIT_RATE = 0.2; // harga bibit = 20% harga jual dasar
-export const SLOT_COSTS = [0, 0, 0, 4000, 10000, 25000, 60000, 140000, 300000];
+export const SLOT_COSTS = [0, 0, 0, 4000, 10000, 25000, 60000, 140000, 300000, 500000, 800000];
 export const MAX_SLOTS = SLOT_COSTS.length;
 export const START_SLOTS = 3;
+
+// Habitat: tiap lahan (slot) berada di satu tempat di peta dan hanya cocok untuk kategori tertentu.
+export const HABITATS = [
+  { id: 'kolam', name: 'Kolam Ikan', one: 'Kolam', cats: ['ikan'], max: 4 },
+  { id: 'kebun', name: 'Kebun Umpan', one: 'Petak', cats: ['perlengkapan'], max: 2 },
+  { id: 'kandang', name: 'Kandang Satwa', one: 'Kandang', cats: ['burung', 'reptil', 'kecil'], max: 5 },
+];
+export const START_HABS = ['kebun', 'kolam', 'kolam'];
+export const getHabitat = (id) => HABITATS.find((h) => h.id === id);
+export const habitatOf = (itemId) => HABITATS.find((h) => h.cats.includes(getItem(itemId).cat));
+export const slotsOfHab = (e, hab) => farmOf(e).habs.map((h, i) => (h === hab ? i : -1)).filter((i) => i >= 0);
 
 // ukuran dasar (cm untuk ikan/burung/reptil, gram untuk satwa kecil dan umpan)
 const SIZE_BASE = {
@@ -129,7 +140,7 @@ export function farmBuffs(e) {
 export function growMs(e, itemId, feedId) {
   const it = getItem(itemId);
   const sec = GROW_SEC[it.tier - 1];
-  const speed = (feedId ? getFeed(feedId).speed : 0) + farmBuffs(e).grow;
+  const speed = (feedId ? getFeed(feedId).speed : 0) + farmBuffs(e).grow + (e.eventOf().grow || 0);
   return Math.max(15, Math.round(sec * (1 - Math.min(0.7, speed)))) * 1000;
 }
 
@@ -159,12 +170,17 @@ export function buyFeed(e, feedId, n) {
   return f.price * n;
 }
 
-export function buySlot(e) {
+export function buySlot(e, hab = null) {
   const fm = farmOf(e);
-  if (fm.slots.length >= MAX_SLOTS) throw new Error('Kolam sudah maksimum');
+  if (fm.slots.length >= MAX_SLOTS) throw new Error('Lahan sudah maksimum');
+  const room = (h) => fm.habs.filter((x) => x === h.id).length < h.max;
+  const h = hab ? getHabitat(hab) : HABITATS.find(room);
+  if (!h) throw new Error('Habitat tidak dikenal');
+  if (!room(h)) throw new Error(`${h.name} sudah penuh`);
   const cost = SLOT_COSTS[fm.slots.length];
-  if (cost > 0) debit(e.state.ledger, e.state.day, 'upgrade', cost, `Kolam/kandang ke-${fm.slots.length + 1}`);
+  if (cost > 0) debit(e.state.ledger, e.state.day, 'upgrade', cost, `${h.one} baru di ${h.name}`);
   fm.slots.push(null);
+  fm.habs.push(h.id);
   return cost;
 }
 
@@ -174,6 +190,7 @@ export function plant(e, slot, itemId, feedId = null) {
   if (fm.slots[slot]) throw new Error('Kolam masih terisi');
   getItem(itemId);
   if (!e.isUnlocked(itemId)) throw new Error('Spesies belum terbuka');
+  if (habitatOf(itemId).id !== fm.habs[slot]) throw new Error(`${getItem(itemId).name} tidak cocok di ${getHabitat(fm.habs[slot]).name}`);
   if (feedId) {
     getFeed(feedId);
     if ((fm.feeds[feedId] || 0) < 1) throw new Error('Pakan habis, beli di Pasar');
@@ -191,6 +208,8 @@ export function plant(e, slot, itemId, feedId = null) {
     itemId, feed: feedId, plantedAt: now, readyAt: now + growMs(e, itemId, feedId),
     cost: price + (feedId ? getFeed(feedId).price : 0),
   };
+  e.state.stats.planted = (e.state.stats.planted || 0) + 1;
+  e.track('plant', 1);
   return fm.slots[slot];
 }
 
@@ -210,7 +229,7 @@ export function harvest(e, slot) {
   const rng = mulberry32(hashSeed(e.state.seed, 'harvest', fm.rolls));
   fm.rolls += 1;
   const feed = s.feed ? getFeed(s.feed) : null;
-  const luck = (feed ? feed.luck : 0) + farmBuffs(e).luck * 10;
+  const luck = (feed ? feed.luck : 0) + farmBuffs(e).luck * 10 + (e.eventOf().luck || 0);
   const r = rollRarity(rng, luck);
   const size = rollSize(rng, feed ? feed.size : 0);
   const animal = { id: fm.nextAnimal++, itemId: s.itemId, rarity: RARITIES[r].id, size, cost: s.cost };
@@ -222,7 +241,8 @@ export function harvest(e, slot) {
   rec.best = Math.max(rec.best, size);
   book[animal.rarity] = rec;
   e.state.stats.bred += 1;
-  e.track('breed', 1);
+  e.state.stats.bestRar = Math.max(e.state.stats.bestRar || 0, r);
+  e.track('harvest', 1);
   return animal;
 }
 
@@ -264,6 +284,7 @@ export function hatch(e, eggId) {
   const kind = PET_KINDS[Math.floor(rng() * PET_KINDS.length)];
   const pet = { id: pets.nextId++, kind: kind.id, rarity: RARITIES[r].id };
   pets.owned.push(pet);
+  e.state.stats.hatched = (e.state.stats.hatched || 0) + 1;
   return pet;
 }
 
@@ -294,6 +315,7 @@ export function releasePet(e, petId) {
 
 export const newFarm = () => ({
   slots: Array.from({ length: START_SLOTS }, () => null),
+  habs: [...START_HABS],
   animals: [], feeds: {}, bibit: {}, nextAnimal: 1, rolls: 0, book: {},
 });
 export const newPets = () => ({ owned: [], equipped: [], nextId: 1, rolls: 0 });

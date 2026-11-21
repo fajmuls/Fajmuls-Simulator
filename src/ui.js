@@ -7,6 +7,8 @@ import { audio } from './audio.js';
 import { ACHIEVEMENTS } from './core/goals.js';
 import { RARITIES, rarityIdx, animalValue, sizeLabel } from './core/farm.js';
 import { animalSVG, uiIconSVG, svgEl } from './art.svg.js';
+import { statIconSVG, EVENT_ICONS } from './art.world.js';
+import { REGULARS } from './core/regulars.js';
 
 export const rarOf = (a) => RARITIES[rarityIdx(a.rarity)];
 export const rp = (n) => 'Rp ' + Math.round(n).toLocaleString('id-ID');
@@ -101,13 +103,14 @@ export const FLOW_LABEL = {
 
 export class UI {
   constructor(ctx) {
-    // ctx: { engine, scene(), persist(), openShop(), closeShop(), setSpeed(), newGame(), importText(), exportFile() }
+    // ctx: { engine, scene(), persist(), travel(), openShop(), closeShop(), setSpeed(), newGame(), importText(), exportFile() }
     this.ctx = ctx;
     this.modal = null;
     this.speed = 1;
     this.tabs = {};
-    this.buildDock();
     this.buildHud();
+    this.buildFloat();
+    this.buildDock();
   }
 
   get e() { return this.ctx.engine; }
@@ -115,25 +118,36 @@ export class UI {
   // ---------- HUD ----------
   buildHud() {
     const hud = document.getElementById('hud');
-    this.hudDay = h('span', { class: 'hud-chip' });
-    this.hudStar = h('span', { class: 'hud-chip star' });
-    this.hudDebt = h('span', { class: 'hud-chip warn', style: 'display:none' });
+    this.hudDay = h('span', { class: 'pill' });
+    this.hudStar = h('span', { class: 'pill star' });
+    this.hudDebt = h('span', { class: 'pill warn', style: 'display:none' });
     this.hudCash = h('div', { class: 'hud-cash' });
-    this.hudLive = h('div', { class: 'sub' });
+    this.hudLive = h('div', { class: 'hud-live' });
     this.hudBar = h('i');
-    this.hudEvent = h('span', { class: 'hud-chip' });
-    this.hudLow = h('button', { class: 'hud-chip quest ready', style: 'display:none', onClick: () => this.openKolam() });
-    this.hudQuest = h('button', { class: 'hud-chip quest', onClick: () => this.openMisi() });
-    this.bellBtn = h('button', { class: 'icon-btn', 'aria-label': 'Riwayat notifikasi', onClick: () => this.openRiwayat() }, '🔔');
-    this.soundBtn = h('button', { class: 'icon-btn', 'aria-label': 'Suara', onClick: () => { audio.unlock(); audio.setMuted(!audio.muted); this.syncSound(); } });
+    this.bellBtn = h('button', { class: 'round', 'aria-label': 'Riwayat notifikasi', onClick: () => this.openRiwayat() }, svgEl(statIconSVG('bell'), 22));
+    this.soundBtn = h('button', { class: 'round', 'aria-label': 'Suara', onClick: () => { audio.unlock(); audio.setMuted(!audio.muted); this.syncSound(); } });
     hud.append(
-      h('div', { class: 'hud-row' }, h('div', { class: 'hud-title' }, '🐾 Pasar Satwa'), h('div', { class: 'row', style: 'gap:6px' }, this.hudDay, this.hudStar, this.bellBtn, this.soundBtn)),
-      h('div', { class: 'hud-row' }, this.hudCash, h('div', { class: 'hud-chips' }, this.hudQuest, this.hudDebt, this.hudLow, this.hudEvent)),
-      h('div', { class: 'hud-row' }, this.hudLive),
+      h('div', { class: 'hud-row' },
+        h('div', { class: 'hud-cashbox' }, svgEl(uiIconSVG('coin'), 26), this.hudCash),
+        h('div', { class: 'hud-right' }, this.hudDay, this.hudStar, this.bellBtn, this.soundBtn)),
+      h('div', { class: 'hud-row' }, this.hudLive, this.hudDebt),
       h('div', { class: 'bar' }, this.hudBar),
     );
     this.syncSound();
-    this.refreshHud();
+  }
+
+  // Tombol mengambang di atas peta: misi, event, cerita, panen, zoom.
+  buildFloat() {
+    const fl = document.getElementById('float');
+    this.fQuest = h('button', { class: 'fchip', onClick: () => this.openMisi() });
+    this.fEvent = h('button', { class: 'fchip', onClick: () => this.openEvent() });
+    this.fStory = h('button', { class: 'fchip', onClick: () => this.openNpc() });
+    this.fReady = h('button', { class: 'fchip ready', style: 'display:none', onClick: () => this.harvestAllUI() });
+    const zoom = h('div', { class: 'fzoom' },
+      h('button', { class: 'round big', 'aria-label': 'Perbesar', onClick: () => this.ctx.scene()?.zoomBy(1.25) }, '+'),
+      h('button', { class: 'round big', 'aria-label': 'Perkecil', onClick: () => this.ctx.scene()?.zoomBy(0.8) }, '−'),
+      h('button', { class: 'round big', 'aria-label': 'Lihat seluruh peta', onClick: () => this.ctx.scene()?.overview() }, svgEl(uiIconSVG('peta'), 24)));
+    fl.append(h('div', { class: 'fcol' }, this.fQuest, this.fEvent, this.fStory, this.fReady), zoom);
   }
 
   // ---------- Ambil hewan dari rak ----------
@@ -142,17 +156,25 @@ export class UI {
     this.openSheet(`Rak ${CATEGORIES.find((c) => c.id === catId).name}`, () => {
       const e = this.e;
       const orders = scene?.waitingOrders() || [];
-      const out = [h('div', { class: 'sub' }, 'Pilih hewan yang diminta pelanggan (ditandai biru), lalu ketuk pelanggannya untuk menyerahkan. Waktu berhenti selama kamu memilih.')];
+      const out = [h('div', { class: 'sub' }, 'Pilih hewan yang diminta pelanggan (bertanda), lalu ketuk pelanggannya. Waktu berhenti selama kamu memilih.')];
       const list = e.state.farm.animals.filter((a) => getItem(a.itemId).cat === catId)
         .sort((a, b) => a.itemId.localeCompare(b.itemId) || rarityIdx(b.rarity) - rarityIdx(a.rarity) || b.size - a.size);
-      if (!list.length) out.push(h('div', { class: 'card' }, 'Rak kosong. Panen dulu di Kolam atau beli bibit di Pasar.'));
+      if (!list.length) out.push(h('div', { class: 'card' }, 'Rak kosong. Panen dulu di Kolam atau Kandang, atau beli bibit di Pasar.'));
+      const groups = [];
       for (const a of list) {
+        const g = groups.find((x) => x.a.itemId === a.itemId && x.a.rarity === a.rarity && x.a.size === a.size);
+        if (g) g.n += 1; else groups.push({ a, n: 1 });
+      }
+      const wants = (a) => orders.some((o) => o.itemId === a.itemId && rarityIdx(a.rarity) + 1 >= o.minQuality);
+      groups.sort((x, y) => Number(wants(y.a)) - Number(wants(x.a)));
+      for (const { a, n } of groups) {
         const it = getItem(a.itemId);
-        const want = orders.some((o) => o.itemId === a.itemId && rarityIdx(a.rarity) + 1 >= o.minQuality);
-        out.push(h('button', { class: `card animal${want ? ' hero' : ''}`, style: `text-align:left;border-left:5px solid ${rarOf(a).color}`,
+        const want = wants(a);
+        out.push(h('button', { class: `card animal${want ? ' hero' : ''}`, style: `text-align:left;border-left:6px solid ${rarOf(a).color}`,
           onClick: () => { scene?.setCarry(a); audio.play('ok'); this.closeModal(); } },
         h('div', { class: 'row', style: 'gap:10px;flex-wrap:nowrap' }, svgEl(animalSVG(it), 40),
-          h('div', { class: 'grow' }, h('b', {}, it.name), h('div', { class: 'sub' }, `${sizeLabel(a.itemId, a.size)} · `, h('span', { style: `color:${rarOf(a).color};font-weight:700` }, rarOf(a).name))),
+          h('div', { class: 'grow' }, h('b', {}, n > 1 ? `${it.name} ×${n}` : it.name), h('div', { class: 'sub' }, `${sizeLabel(a.itemId, a.size)} · `, h('span', { style: `color:${rarOf(a).color};font-weight:800` }, rarOf(a).name))),
+          want ? h('span', { class: 'badge good' }, 'dipesan') : null,
           h('span', { class: 'price' }, rp(animalValue(a))))));
       }
       return out;
@@ -164,14 +186,13 @@ export class UI {
   // ---------- Tutorial ----------
   tutorialSteps() {
     return [
-      { mid: true, title: 'Selamat datang di Pasar Satwa! 🐾', text: 'Di sini kamu membudidayakan hewan sendiri, lalu menjualnya langsung ke pelanggan. Tidak ada yang otomatis. Tutorial singkat ini bisa dilewati kapan saja.' },
-      { el: () => this.tabs.pasar, title: '1. Belanja di Pasar', text: 'Beli bibit (cacing, anak ikan, dll) dan pakan. Pakan mahal membuat hewan lebih besar dan lebih mungkin langka.' },
-      { el: () => this.tabs.kolam, title: '2. Tanam di Kolam', text: 'Tanam bibit di kolam, pilih pakan, lalu tunggu beberapa menit sampai tumbuh. Setelah siap, panen: hasilnya punya ukuran dan rarity dari Common sampai Secret.' },
-      { el: () => this.tabs.koleksi, title: '3. Koleksi', text: 'Hewan hasil panen disimpan di Kandang. Buku Koleksi mencatat rarity dan ukuran terbaik tiap spesies.' },
-      { el: () => this.tabs.pet, title: '4. Pet', text: 'Tetaskan telur untuk mendapat pet dengan rarity berbeda. Pet yang dipasang memberi buff peluang, kecepatan, harga, dan tip.' },
-      { el: () => this.goBtn, title: '5. Buka toko dan layani sendiri', text: 'Pelanggan antre dengan pesanannya di atas kepala. Ketuk rak untuk mengambil hewan yang tepat (waktu berhenti saat memilih), lalu ketuk pelanggan untuk menyerahkan. Cepat = tip. Kolektor dan VIP membayar mahal untuk hewan langka.' },
-      { el: () => this.hudQuest, title: '6. Misi harian', text: 'Selesaikan misi untuk hadiah uang dan poin skill. Ketuk untuk melihat dan mengambil hadiah.' },
-      { el: () => this.tabs.fitur, title: '7. Fitur', text: 'Misi, Buku Langganan, Upgrade toko, Skill, Karyawan (tampil di toko dan memberi buff), Bank, dan lainnya.' },
+      { mid: true, title: 'Selamat datang di Pasar Satwa!', text: 'Ini peta pasarmu. Geser dengan jari untuk melihat sekeliling, cubit untuk zoom, ketuk tanah agar karakter berjalan ke sana. Semua dilayani langsung olehmu, tidak ada yang otomatis.' },
+      { el: () => this.tabs.pasar, title: '1. Belanja di Pasar', text: 'Beli bibit atau anak hewan dan pakan. Pakan mahal membuat hewan lebih besar dan lebih mungkin langka.' },
+      { el: () => this.tabs.kolam, title: '2. Tanam di Kolam', text: 'Pergi ke Kolam & Kebun. Ketuk lahan kosong, pilih bibit dan pakan, lalu tunggu tumbuh. Saat tanda seru muncul, ketuk lahan itu untuk panen.' },
+      { el: () => this.tabs.pet, title: '3. Pet', text: 'Tetaskan telur untuk mendapat pet. Pet yang dipasang mengikutimu dan memberi buff.' },
+      { el: () => this.goBtn, title: '4. Buka toko dan layani', text: 'Pelanggan antre membawa pesanan di atas kepala. Ketuk rak untuk mengambil hewan yang tepat, lalu ketuk pelanggan untuk menyerahkan. Cepat melayani berarti tip.' },
+      { el: () => this.fStory, title: '5. Cerita dan misi', text: 'Ketuk Pak Pasar di alun-alun atau tombol ini untuk melanjutkan cerita. Misi harian memberi hadiah tambahan.' },
+      { el: () => this.tabs.menu, title: '6. Menu', text: 'Koleksi, Skill, Upgrade, Karyawan, Bank, Laporan, dan Pengaturan ada di sini.' },
     ];
   }
 
@@ -208,14 +229,30 @@ export class UI {
   }
 
   openRiwayat() {
-    this.openSheet('🔔 Riwayat notifikasi', () => [
+    this.openSheet('Riwayat notifikasi', () => [
       notifLog.length ? null : h('div', { class: 'card' }, 'Belum ada notifikasi.'),
       ...notifLog.map((n) => h('div', { class: `card${n.kind === 'err' ? ' warn' : ''}` }, h('div', {}, n.msg), h('div', { class: 'sub' }, new Date(n.t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })))),
     ].filter(Boolean));
   }
 
+  openEvent() {
+    const e = this.e;
+    const ev = e.eventOf();
+    const next = e.eventOf(e.state.day + 1);
+    this.openSheet('Event hari ini', () => [
+      h('div', { class: 'card hero' }, h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:12px' }, svgEl(EVENT_ICONS[ev.id] || EVENT_ICONS.cerah, 56),
+        h('div', {}, h('b', { style: 'font-size:18px' }, ev.name), h('div', { class: 'sub' }, ev.desc)))),
+      h('div', { class: 'card' }, h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:12px' }, svgEl(EVENT_ICONS[next.id] || EVENT_ICONS.cerah, 40),
+        h('div', {}, h('div', { class: 'sub' }, 'Besok'), h('b', {}, next.name), h('div', { class: 'sub' }, next.desc)))),
+    ]);
+  }
+
   syncSound() {
-    this.soundBtn.textContent = audio.muted ? '🔇' : '🔊';
+    this.soundBtn.replaceChildren(svgEl(statIconSVG(audio.muted ? 'mute' : 'sound'), 22));
+  }
+
+  setHub(id) {
+    for (const [k, b] of Object.entries(this.tabs)) b.classList.toggle('on', b.dataset.hub === id && k !== 'menu');
   }
 
   refreshHud(tick) {
@@ -234,16 +271,25 @@ export class UI {
     for (const n of e.takeNotes()) toast(n.text, 'ok');
     const claimable = this.claimableCount();
     const doneQ = s.quests.daily.filter((x) => x.prog >= x.goal).length;
-    this.hudQuest.textContent = `🎯 ${doneQ}/${s.quests.daily.length}${claimable ? ' 🎁' : ''}`;
-    this.hudQuest.classList.toggle('ready', claimable > 0);
-    this.tabs.fitur?.classList.toggle('badge-dot', claimable > 0);
-    const ev = e.mods().event;
-    this.hudEvent.textContent = `${ev.icon} ${ev.name}`;
+    this.fQuest.replaceChildren(svgEl(statIconSVG('quest'), 20), h('span', {}, `${doneQ}/${s.quests.daily.length}${claimable ? ' ●' : ''}`));
+    this.fQuest.classList.toggle('ready', claimable > 0);
+    const ev = e.eventOf();
+    this.fEvent.replaceChildren(svgEl(EVENT_ICONS[ev.id] || EVENT_ICONS.cerah, 22));
+    this.fEvent.title = ev.name;
+    this.fEvent.setAttribute('aria-label', `Event: ${ev.name}`);
+    const sn = e.storyNow();
+    if (sn.done) {
+      this.fStory.style.display = 'none';
+    } else {
+      this.fStory.style.display = '';
+      this.fStory.replaceChildren(svgEl(statIconSVG('story'), 20), h('span', {}, `${sn.ready ? 'Beres!' : `${sn.cur}/${sn.need}`.replace(/(\d+)\/(\d{5,})/, (_m, a, b) => `${rpShort(Number(a)).replace('Rp ', '')}/${rpShort(Number(b)).replace('Rp ', '')}`)}`));
+      this.fStory.classList.toggle('ready', sn.ready || !sn.introSeen);
+    }
     const readyN = s.farm.slots.filter((_, i) => e.slotProgress(i)?.ready).length;
-    this.hudLow.style.display = readyN ? '' : 'none';
-    this.hudLow.textContent = `🌱 ${readyN} siap panen`;
-    this.hudLow.classList.remove('warn');
+    this.fReady.style.display = readyN ? '' : 'none';
+    this.fReady.replaceChildren(svgEl(statIconSVG('harvest'), 20), h('span', {}, `${readyN}`));
     this.tabs.kolam?.classList.toggle('badge-dot', readyN > 0);
+    this.tabs.menu?.classList.toggle('badge-dot', claimable > 0 || (!sn.done && sn.ready));
     if (s.phase === 'open' && tick) {
       const t = tick.today;
       this.hudLive.textContent = `Toko BUKA · dilayani ${t.served}/${t.customers} · omzet ${rpShort(t.revenue)}${tick.closing ? ' · menutup...' : ''}`;
@@ -252,7 +298,6 @@ export class UI {
       const sp = e.starProgress();
       this.hudLive.textContent = `Toko TUTUP · hewan ${s.farm.animals.length} · reputasi ${sp.rep.toFixed(1)}${sp.to ? ` / ${sp.to}` : ''}`;
       this.hudBar.style.width = `${sp.pct}%`;
-      this.hudBar.parentElement.title = sp.to ? `Reputasi ${sp.rep.toFixed(1)} / ${sp.to} untuk bintang berikutnya` : 'Bintang maksimum';
     }
     this.syncDock();
   }
@@ -261,61 +306,42 @@ export class UI {
   buildDock() {
     const dock = document.getElementById('dock');
     const defs = [
-      ['kolam', 'kolam', 'Kolam', () => this.openKolam(), false],
-      ['pasar', 'pasar', 'Pasar', () => this.openPasar(), false],
-      ['koleksi', 'koleksi', 'Koleksi', () => this.openKoleksi(), false],
-      ['pet', 'pet', 'Pet', () => this.openPet(), false],
-      ['fitur', 'fitur', 'Fitur', () => this.openFitur(), false],
-      ['menu', 'menu', 'Menu', () => this.openMenu(), false],
+      ['kolam', 'kolam', 'Kolam', 'kolam', () => this.ctx.travel('kolam')],
+      ['kandang', 'kandang', 'Kandang', 'kandang', () => this.ctx.travel('kandang')],
+      ['pasar', 'pasar', 'Pasar', 'pasar', () => this.ctx.travel('pasar', () => this.openPasar())],
+      ['toko', 'toko', 'Toko', 'toko', () => this.ctx.travel('toko')],
+      ['pet', 'pet', 'Pet', 'pet', () => this.ctx.travel('pet', () => this.openPet())],
+      ['menu', 'menu', 'Menu', null, () => this.openMenu()],
     ];
     const tabs = h('div', { class: 'dock-tabs' });
-    for (const [id, icon, label, fn, lockWhenOpen] of defs) {
-      const b = h('button', { class: 'tab', onClick: fn }, svgEl(uiIconSVG(icon), 26), label);
-      b.dataset.lock = lockWhenOpen ? '1' : '';
+    for (const [id, icon, label, hub, fn] of defs) {
+      const b = h('button', { class: 'tab', onClick: fn }, svgEl(uiIconSVG(icon), 28), h('span', {}, label));
+      b.dataset.hub = hub || '';
       this.tabs[id] = b;
       tabs.append(b);
     }
     this.goBtn = h('button', { class: 'btn go', onClick: () => this.toggleShop() });
-    this.speedBox = h('div', { class: 'speed' });
-    for (const [label, s] of [['⏸', 0], ['1x', 1], ['2x', 2], ['4x', 4], ['8x', 8]]) {
-      const b = h('button', { class: 'btn secondary', onClick: () => this.pickSpeed(s) }, label);
-      b.dataset.s = s;
-      b.dataset.label = label;
-      this.speedBox.append(b);
-    }
-    dock.append(h('div', { class: 'dock-main' }, this.goBtn, this.speedBox), tabs);
+    this.speedBtn = h('button', { class: 'btn secondary speedbtn', 'aria-label': 'Kecepatan', onClick: () => this.cycleSpeed() });
+    dock.append(h('div', { class: 'dock-main' }, this.goBtn, this.speedBtn), tabs);
     this.syncDock();
   }
 
-  pickSpeed(s) {
-    const e = this.e;
-    if (s > e.maxSpeed()) {
-      if (e.state.phase === 'open') return toast('Tutup toko dulu, lalu beli Mesin Waktu di Fitur → Upgrade', 'err');
-      const cost = e.upgradeCost('kecepatan');
-      if (cost === null) return;
-      if (confirm(`Buka kecepatan ${e.maxSpeed() === 2 ? '4x' : '8x'} dengan Mesin Waktu seharga ${rp(cost)}?`)) {
-        this.act(() => e.buyUpgrade('kecepatan'), `Kecepatan ${e.maxSpeed()}x terbuka!`);
-      }
-      return;
-    }
-    this.speed = s;
-    this.ctx.setSpeed(s);
+  cycleSpeed() {
+    const steps = [0, 1, 2, 4, 8].filter((s) => s <= this.e.maxSpeed());
+    const i = steps.indexOf(this.speed);
+    this.speed = steps[(i + 1) % steps.length];
+    if (this.speed === 0 && this.e.state.phase !== 'open') this.speed = 1;
+    this.ctx.setSpeed(this.speed);
     this.syncDock();
+    if (this.e.maxSpeed() < 8 && this.speed === steps.at(-1)) toast('Mesin Waktu di Menu > Upgrade membuka kecepatan lebih tinggi');
   }
 
   syncDock() {
     const open = this.e.state.phase === 'open';
     if (this.speed > this.e.maxSpeed()) this.speed = this.e.maxSpeed();
-    for (const b of Object.values(this.tabs)) b.disabled = open && b.dataset.lock === '1';
-    this.goBtn.textContent = open ? '⏹ Tutup Toko' : `▶ Buka Toko (Hari ${this.e.state.day})`;
+    this.goBtn.replaceChildren(svgEl(statIconSVG(open ? 'stop' : 'play'), 22), h('span', {}, open ? 'Tutup Toko' : `Buka Toko · Hari ${this.e.state.day}`));
     this.goBtn.classList.toggle('stop', open);
-    for (const b of this.speedBox.children) {
-      const sp = Number(b.dataset.s);
-      const locked = sp > this.e.maxSpeed();
-      b.classList.toggle('on', sp === this.speed);
-      b.classList.toggle('locked', locked);
-      b.textContent = locked ? `🔒${b.dataset.label}` : b.dataset.label;
-    }
+    this.speedBtn.textContent = this.speed === 0 ? 'Jeda' : `${this.speed}x`;
   }
 
   toggleShop() {
@@ -330,30 +356,116 @@ export class UI {
       this.closeModal();
       this.speed = this.speed === 0 ? 1 : this.speed;
       this.ctx.openShop();
+      this.ctx.scene()?.travelTo('toko');
       audio.play('open');
+      const ev = this.e.eventOf();
+      if (ev.id !== 'cerah') toast(`Event hari ini: ${ev.name}. ${ev.desc || ''}`, 'ok');
       this.ctx.setSpeed(this.speed);
       this.syncDock();
     }
   }
 
-  // ---------- Modal dasar ----------
+  // ---------- Panel dasar: tinggi tetap, isi dipecah ke halaman, tanpa scroll ----------
   openSheet(title, render) {
     this.closeModal();
     const body = h('div', { class: 'sheet-body' });
+    const pager = h('div', { class: 'pager', style: 'display:none' });
     const sheet = h('div', { class: 'sheet' },
       h('div', { class: 'sheet-head' }, h('h2', {}, title), h('button', { class: 'x', onClick: () => this.closeModal(), 'aria-label': 'Tutup' }, '✕')),
-      body);
+      body, pager);
     const overlay = h('div', { class: 'overlay', onClick: (ev) => { if (ev.target === overlay) this.closeModal(); } }, sheet);
     document.getElementById('modal-root').append(overlay);
-    this.modal = { overlay, body, render };
+    this.modal = { overlay, sheet, body, pager, render, page: 0, pages: 1 };
+    let sx = null;
+    body.addEventListener('touchstart', (ev) => { sx = ev.touches[0].clientX; }, { passive: true });
+    body.addEventListener('touchend', (ev) => {
+      if (sx === null) return;
+      const dx = ev.changedTouches[0].clientX - sx;
+      sx = null;
+      if (Math.abs(dx) > 70) this.gotoPage(this.modal.page + (dx < 0 ? 1 : -1));
+    }, { passive: true });
     this.rerender();
   }
 
   rerender() {
     if (!this.modal) return;
-    const top = this.modal.body.scrollTop;
-    this.modal.body.replaceChildren(...[].concat(this.modal.render()));
-    this.modal.body.scrollTop = top;
+    this.modal.nodes = [].concat(this.modal.render()).filter(Boolean);
+    this.layoutPages();
+  }
+
+  gotoPage(p) {
+    const m = this.modal;
+    if (!m) return;
+    m.page = Math.max(0, Math.min(m.pages - 1, p));
+    this.showPage();
+  }
+
+  // Memecah node menjadi halaman yang pas di layar. Node bertanda .sticky (tab) muncul di tiap halaman.
+  layoutPages() {
+    const m = this.modal;
+    const { body, nodes } = m;
+    m.sheet.style.height = '';
+    body.style.flex = '';
+    body.style.overflowY = 'hidden';
+    body.replaceChildren(...nodes);
+    const cs = getComputedStyle(body);
+    const gap = parseFloat(cs.rowGap) || 10;
+    const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    // Ukur dua kali: tanpa bilah halaman (satu halaman) dan dengan bilah halaman (beberapa halaman).
+    const pg = m.pager;
+    pg.style.display = 'none';
+    const availFull = body.clientHeight - pad;
+    pg.style.display = '';
+    pg.replaceChildren(h('div', { style: 'height:36px' }));
+    const availPaged = body.clientHeight - pad;
+    const hs = nodes.map((n) => n.offsetHeight);
+    let si = 0;
+    while (si < nodes.length && nodes[si].classList?.contains('sticky')) si++;
+    const sticky = nodes.slice(0, si);
+    const stickyH = hs.slice(0, si).reduce((a, b) => a + b + gap, 0);
+    const restH = hs.slice(si).reduce((a, b) => a + b, 0) + gap * Math.max(0, nodes.length - si - 1);
+    const single = stickyH + restH <= availFull + 1;
+    m.single = single;
+    m.fitH = stickyH + restH + pad;
+    const avail = single ? availFull : availPaged;
+    const limit = Math.max(120, avail - stickyH);
+    const pages = [];
+    let cur = [];
+    let used = 0;
+    for (let i = si; i < nodes.length; i++) {
+      const need = hs[i] + (cur.length ? gap : 0);
+      if (cur.length && used + need > limit) { pages.push(cur); cur = []; used = 0; }
+      used += hs[i] + (cur.length ? gap : 0);
+      cur.push({ n: nodes[i], h: hs[i] });
+    }
+    if (cur.length || !pages.length) pages.push(cur);
+    m.sticky = sticky;
+    m.pageList = pages;
+    m.limit = limit;
+    m.pages = pages.length;
+    m.page = Math.max(0, Math.min(m.page, m.pages - 1));
+    this.showPage();
+  }
+
+  showPage() {
+    const m = this.modal;
+    const page = m.pageList[m.page] || [];
+    m.body.replaceChildren(...m.sticky, ...page.map((x) => x.n));
+    m.body.scrollTop = 0;
+    const tall = page.length === 1 && page[0].h > m.limit + 2;
+    m.body.style.overflowY = tall ? 'auto' : 'hidden';
+    const pg = m.pager;
+    if (m.pages <= 1) {
+      pg.style.display = 'none';
+      if (m.single && !tall) { m.sheet.style.height = 'auto'; m.body.style.flex = '0 0 auto'; }
+      return;
+    }
+    pg.style.display = '';
+    pg.replaceChildren(
+      h('button', { class: 'pg-btn', disabled: m.page === 0, onClick: () => this.gotoPage(m.page - 1), 'aria-label': 'Halaman sebelumnya' }, '◀'),
+      h('div', { class: 'pg-dots' }, Array.from({ length: m.pages }, (_, i) => h('i', { class: i === m.page ? 'on' : '', onClick: () => this.gotoPage(i) }))),
+      h('span', { class: 'pg-n' }, `${m.page + 1}/${m.pages}`),
+      h('button', { class: 'pg-btn', disabled: m.page >= m.pages - 1, onClick: () => this.gotoPage(m.page + 1), 'aria-label': 'Halaman berikutnya' }, '▶'));
   }
 
   closeModal() {
@@ -363,6 +475,7 @@ export class UI {
     this.modal?.overlay.remove();
     this.modal = null;
   }
+
 
   // Menjalankan aksi game: tampilkan pesan, simpan, segarkan tampilan.
   act(fn, okMsg, sound = 'ok') {
@@ -387,7 +500,7 @@ export class UI {
   }
 
   chips(options, current, onPick) {
-    return h('div', { class: 'chips' }, options.map((o) => h('button', { class: `chip${o.id === current ? ' on' : ''}`, onClick: () => onPick(o.id) }, o.label)));
+    return h('div', { class: 'chips sticky' }, options.map((o) => h('button', { class: `chip${o.id === current ? ' on' : ''}`, onClick: () => { if (this.modal) this.modal.page = 0; onPick(o.id); } }, o.label)));
   }
 
   lockCard(text) {
@@ -395,7 +508,7 @@ export class UI {
   }
 
   openLaporan() {
-    this.openSheet('📈 Laporan Keuangan', () => {
+    this.openSheet('Laporan Keuangan', () => {
       const e = this.e;
       const s = e.state;
       const last = s.history[s.history.length - 1];
@@ -479,7 +592,7 @@ export class UI {
       hints.push(`${e.mods().event.icon} Besok: ${e.mods().event.name}`);
       out.push(h('div', { class: 'card' }, `Kas sekarang: ${rp(summary.endCash)}`, hints.map((t) => h('div', { class: 'sub' }, t))));
       out.push(h('div', { class: 'row' },
-        h('button', { class: 'btn grow', onClick: () => { this.closeModal(); this.openKolam(); } }, '🌱 Ke Kolam'),
+        h('button', { class: 'btn grow', onClick: () => { this.closeModal(); this.ctx.travel('kolam'); } }, '🌱 Ke Kolam'),
         h('button', { class: 'btn secondary grow', onClick: () => { this.closeModal(); this.toggleShop(); } }, `▶ Mulai hari ${e.state.day}`)),
         h('button', { class: 'btn secondary', onClick: () => this.closeModal() }, 'Tutup'));
       return out;
@@ -487,9 +600,48 @@ export class UI {
     this.refreshHud();
   }
 
-  // ---------- Menu ----------
+
+  // ---------- Menu utama: kisi ikon ----------
+  tileGrids(tiles, per = 9) {
+    const out = [];
+    for (let i = 0; i < tiles.length; i += per) {
+      out.push(h('div', { class: 'grid3' }, tiles.slice(i, i + per).map(([icon, title, sub, fn, badge]) =>
+        h('button', { class: 'tile', onClick: fn },
+          h('div', { class: 'tile-icon' }, svgEl(uiIconSVG(icon), 40), badge ? h('span', { class: 'dot' }, badge) : null),
+          h('b', {}, title), h('span', { class: 'sub' }, sub)))));
+    }
+    return out;
+  }
+
   openMenu() {
-    this.openSheet('☰ Menu', () => {
+    this.openSheet('Menu', () => {
+      const e = this.e;
+      const s = e.state;
+      const sn = e.storyNow();
+      const tiles = [
+        ['koleksi', 'Koleksi', `${s.farm.animals.length} hewan`, () => this.openKoleksi(), null],
+        ['cerita', 'Cerita', sn.done ? 'Tamat' : `Bab ${sn.index + 1}/${sn.total}`, () => this.openCerita(), !sn.done && sn.ready ? '!' : null],
+        ['misi', 'Misi', this.questSummary(), () => this.openMisi(), this.claimableCount() || null],
+        ['langganan', 'Langganan', `${Object.keys(s.regulars).length}/${REGULARS.length} dikenal`, () => this.openLangganan(), this.regularClaimable() || null],
+        ['hewan', 'Spesies', 'Buka hewan baru', () => this.openSpesies(), null],
+        ['bintang', 'Bintang', starsText(s.stars), () => this.openBintang(), null],
+        ['skill', 'Skill', `${e.skillPointsFree()} poin`, () => this.openSkill(), e.skillPointsFree() > 0 ? e.skillPointsFree() : null],
+        ['upgrade', 'Upgrade', `Toko Lv ${s.shopLevel}`, () => this.openUpgrade(), null],
+        ['ramuan', 'Ramuan', s.stars >= 2 ? `${Object.keys(s.buffs).length} aktif` : 'butuh ★2', () => this.openRamuan(), null],
+        ['karyawan', 'Karyawan', `${Object.keys(s.staff).length} bekerja`, () => this.openKaryawan(), null],
+        ['bank', 'Bank', s.stars >= 2 ? `${s.loans.length} pinjaman` : 'butuh ★2', () => this.openBank(), null],
+        ['investasi', 'Investasi', s.stars >= 3 ? rpShort(e.netWorth()) : 'butuh ★3', () => this.openInvestasi(), null],
+        ['laporan', 'Laporan', 'Keuangan', () => this.openLaporan(), null],
+        ['pengaturan', 'Pengaturan', 'Suara, simpan', () => this.openPengaturan(), null],
+      ];
+      return this.tileGrids(tiles);
+    });
+  }
+
+  openFitur() { this.openMenu(); }
+
+  openPengaturan() {
+    this.openSheet('Pengaturan', () => {
       const e = this.e;
       const ta = h('textarea', { placeholder: 'Tempel isi berkas simpanan di sini untuk mengimpor...' });
       const fileIn = h('input', { type: 'file', accept: '.json,application/json', style: 'display:none', onChange: async (ev) => {
@@ -499,43 +651,43 @@ export class UI {
       return [
         h('div', { class: 'card' }, h('b', {}, 'Cara bermain'),
           h('div', { class: 'sub', style: 'white-space:pre-line' }, [
-            '1. Belanja stok di Grosir, atur harga di Harga.',
-            '2. Tekan Buka Toko: pelanggan datang, memilih, antre, bayar.',
-            '3. Reputasi naik jika pelanggan puas. Naik bintang membuka fitur baru.',
-            '4. Perluas toko untuk membuka kategori hewan, buka spesies baru di Daftar Hewan.',
-            '5. Pakai skill, ramuan, dan karyawan. Hati-hati dengan utang dan sewa.',
+            '1. Beli bibit dan pakan di Pasar.',
+            '2. Tanam di Kolam, Kebun, atau Kandang. Tunggu tumbuh, lalu ketuk untuk panen.',
+            '3. Buka toko, ketuk rak untuk mengambil hewan, ketuk pelanggan untuk menyerahkan.',
+            '4. Hewan langka dibayar mahal. Pakan mahal dan pet membantu peluang langka.',
+            '5. Ikuti cerita Pak Pasar dan selesaikan misi harian.',
           ].join('\n'))),
-        h('div', { class: 'card' }, h('b', {}, '🔊 Suara'),
+        h('div', { class: 'card' }, h('b', {}, 'Suara'),
           h('label', { class: 'sub' }, 'Efek suara', h('input', { type: 'range', min: 0, max: 100, value: Math.round(audio.sfxVol * 100), onInput: (ev) => audio.setSfx(Number(ev.target.value) / 100), onChange: () => audio.play('ok') })),
           h('label', { class: 'sub' }, 'Musik latar', h('input', { type: 'range', min: 0, max: 100, value: Math.round(audio.musicVol * 100), onInput: (ev) => audio.setMusic(Number(ev.target.value) / 100) })),
-          h('button', { class: 'btn secondary small', onClick: () => { audio.unlock(); audio.setMuted(!audio.muted); this.syncSound(); this.rerender(); } }, audio.muted ? '🔇 Suara mati, tekan untuk menyalakan' : '🔊 Suara menyala, tekan untuk membisukan')),
-        h('div', { class: 'card' }, h('b', {}, '♿ Tampilan'),
+          h('button', { class: 'btn secondary small', onClick: () => { audio.unlock(); audio.setMuted(!audio.muted); this.syncSound(); this.rerender(); } }, audio.muted ? 'Suara mati, tekan untuk menyalakan' : 'Suara menyala, tekan untuk membisukan')),
+        h('div', { class: 'card' }, h('b', {}, 'Tampilan'),
           h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: getA11y().big, onChange: (ev) => setA11y({ big: ev.target.checked }) }), 'Huruf besar'),
           h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: getA11y().contrast, onChange: (ev) => setA11y({ contrast: ev.target.checked }) }), 'Kontras tinggi'),
-          installEvt ? h('button', { class: 'btn secondary small', onClick: async () => { installEvt.prompt(); await installEvt.userChoice; installEvt = null; this.rerender(); } }, '📲 Pasang aplikasi di layar utama') : h('div', { class: 'sub' }, 'Untuk memasang: gunakan menu browser "Tambahkan ke layar utama".'),
-          h('button', { class: 'btn secondary small', onClick: () => { this.e.state.tutorial = { step: 0, done: false }; this.closeModal(); this.startTutorial(); } }, '🎓 Ulangi tutorial')),
+          installEvt ? h('button', { class: 'btn secondary small', onClick: async () => { installEvt.prompt(); await installEvt.userChoice; installEvt = null; this.rerender(); } }, 'Pasang aplikasi di layar utama') : h('div', { class: 'sub' }, 'Untuk memasang: gunakan menu browser "Tambahkan ke layar utama".'),
+          h('button', { class: 'btn secondary small', onClick: () => { this.e.state.tutorial = { step: 0, done: false }; this.closeModal(); this.startTutorial(); } }, 'Ulangi tutorial')),
         h('div', { class: 'card' }, h('b', {}, 'Simpan'),
           h('div', { class: 'sub' }, 'Tersimpan otomatis di perangkat setiap toko tutup. Hari yang sedang berjalan tidak disimpan.'),
-          h('button', { class: 'btn', onClick: () => { this.ctx.persist(true); toast('Tersimpan', 'ok'); } }, '💾 Simpan sekarang')),
+          h('button', { class: 'btn', onClick: () => { this.ctx.persist(true); toast('Tersimpan', 'ok'); } }, 'Simpan sekarang')),
         h('div', { class: 'card' }, h('b', {}, 'Cadangan (ekspor / impor)'),
-          h('button', { class: 'btn secondary', onClick: () => this.ctx.exportFile() }, '⬇️ Unduh berkas simpanan'),
+          h('button', { class: 'btn secondary', onClick: () => this.ctx.exportFile() }, 'Unduh berkas simpanan'),
           fileIn,
-          h('button', { class: 'btn secondary', onClick: () => fileIn.click() }, '📂 Pilih berkas simpanan'),
+          h('button', { class: 'btn secondary', onClick: () => fileIn.click() }, 'Pilih berkas simpanan'),
           ta,
           h('button', { class: 'btn', onClick: () => {
             try { this.ctx.importText(ta.value); this.closeModal(); toast('Simpanan dimuat', 'ok'); } catch (err) { toast(err.message, 'err'); }
-          } }, '⬆️ Impor dari teks')),
+          } }, 'Impor dari teks')),
         h('div', { class: 'card' }, h('b', {}, 'Audit keuangan'),
           h('div', { class: 'sub' }, 'Memeriksa bahwa saldo sama dengan seluruh transaksi.'),
           h('button', { class: 'btn secondary', onClick: () => {
             const p = auditLedger(e.state.ledger);
-            toast(p.length ? `Masalah: ${p[0]}` : '✅ Buku kas sehat, saldo cocok dengan transaksi', p.length ? 'err' : 'ok');
-          } }, '🔍 Jalankan audit')),
+            toast(p.length ? `Masalah: ${p[0]}` : 'Buku kas sehat, saldo cocok dengan transaksi', p.length ? 'err' : 'ok');
+          } }, 'Jalankan audit')),
         h('div', { class: 'card' }, h('b', {}, 'Game baru'),
           h('button', { class: 'btn danger', disabled: e.state.phase === 'open', onClick: () => {
             if (confirm('Hapus progres dan mulai game baru? Ini tidak bisa dibatalkan.')) { this.ctx.newGame(); this.closeModal(); }
-          } }, '🗑️ Mulai game baru')),
-        h('div', { class: 'sub', style: 'text-align:center' }, `Pasar Satwa by Fajmuls · v4.0 · 1 hari = ${DAY_LENGTH_SEC}s pada 1x`),
+          } }, 'Mulai game baru')),
+        h('div', { class: 'sub', style: 'text-align:center' }, `Pasar Satwa by Fajmuls · v6.0 · 1 hari = ${DAY_LENGTH_SEC}s pada 1x`),
       ];
     });
   }

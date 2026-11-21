@@ -12,7 +12,7 @@ const P = UI.prototype;
 
 // ---------- Menu Fitur ----------
 P.openFitur = function openFitur() {
-  this.openSheet('🗂️ Fitur', () => {
+  this.openSheet('Fitur', () => {
     const e = this.e;
     const s = e.state;
     const ready = s.breeding.filter((b) => s.day >= b.ready).length;
@@ -37,7 +37,7 @@ P.openFitur = function openFitur() {
 
 // ---------- Daftar Hewan ----------
 P.openSpesies = function openSpesies() {
-  this.openSheet('🐾 Daftar Hewan', () => {
+  this.openSheet('Daftar Hewan', () => {
     const e = this.e;
     const out = [h('div', { class: 'sub' }, 'Buka spesies satu per satu dengan uang. Tier lebih tinggi harganya lebih mahal dan lebih untung. Perluas toko untuk membuka kategori baru.')];
     for (const cat of CATEGORIES) {
@@ -62,7 +62,7 @@ P.openSpesies = function openSpesies() {
 
 // ---------- Bintang ----------
 P.openBintang = function openBintang() {
-  this.openSheet('⭐ Reputasi & Bintang', () => {
+  this.openSheet('Reputasi & Bintang', () => {
     const e = this.e;
     const s = e.state;
     const sp = e.starProgress();
@@ -83,7 +83,7 @@ P.openBintang = function openBintang() {
 
 // ---------- Pohon Skill ----------
 P.openSkill = function openSkill() {
-  this.openSheet('🌳 Pohon Skill', () => {
+  this.openSheet('Pohon Skill', () => {
     const e = this.e;
     const out = [h('div', { class: 'card' },
       h('div', { class: 'card-top' }, h('b', {}, 'Poin skill'), h('span', { class: 'price' }, `${e.skillPointsFree()} bebas / ${e.skillPointsTotal()} total`)),
@@ -107,7 +107,7 @@ P.openSkill = function openSkill() {
 
 // ---------- Upgrade & Perluas ----------
 P.openUpgrade = function openUpgrade() {
-  this.openSheet('🏬 Upgrade & Perluas', () => {
+  this.openSheet('Upgrade & Perluas', () => {
     const e = this.e;
     const s = e.state;
     const cur = SHOP_LEVELS[s.shopLevel - 1];
@@ -136,7 +136,7 @@ P.openUpgrade = function openUpgrade() {
 
 // ---------- Ramuan ----------
 P.openRamuan = function openRamuan() {
-  this.openSheet('🧪 Ramuan', () => {
+  this.openSheet('Ramuan', () => {
     const e = this.e;
     const s = e.state;
     if (s.stars < 2) return [this.lockCard('Ramuan terbuka di bintang 2')];
@@ -155,7 +155,7 @@ P.openRamuan = function openRamuan() {
 
 // ---------- Karyawan ----------
 P.openKaryawan = function openKaryawan() {
-  this.openSheet('🧑‍🤝‍🧑 Karyawan', () => {
+  this.openSheet('Karyawan', () => {
     const e = this.e;
     const s = e.state;
     const out = [h('div', { class: 'card' }, h('div', { class: 'card-top' }, h('b', {}, 'Total gaji harian'), h('span', { class: 'price' }, rp(e.wages()))),
@@ -187,7 +187,7 @@ P.openKaryawan = function openKaryawan() {
 
 // ---------- Breeding ----------
 P.openBreeding = function openBreeding() {
-  this.openSheet('🥚 Breeding', () => {
+  this.openSheet('Breeding', () => {
     const e = this.e;
     const s = e.state;
     if (!e.breedSlots()) return [this.lockCard('Pelajari skill "Pengembang Biak" di Pohon Skill (cabang Peternakan).')];
@@ -220,7 +220,7 @@ P.openBreeding = function openBreeding() {
 P.openBank = function openBank() {
   this.bankAmt = this.bankAmt || 10000;
   this.bankTerm = this.bankTerm ?? 0;
-  this.openSheet('🏦 Bank', () => {
+  this.openSheet('Bank', () => {
     const e = this.e;
     const s = e.state;
     if (s.stars < 2) return [this.lockCard('Bank terbuka di bintang 2')];
@@ -256,7 +256,7 @@ P.openInvestasi = function openInvestasi() {
   this.invAmt = this.invAmt || 20000;
   this.invTerm = this.invTerm ?? 1;
   this.shareQty = this.shareQty || {};
-  this.openSheet('📊 Investasi', () => {
+  this.openSheet('Investasi', () => {
     const e = this.e;
     const s = e.state;
     if (s.stars < 3) return [this.lockCard('Investasi terbuka di bintang 3')];
@@ -335,7 +335,7 @@ const rewardText = (r) => [r.cash ? rp(r.cash) : null, r.points ? `${r.points} p
 
 P.openMisi = function openMisi() {
   this.misiTab = this.misiTab || 'daily';
-  this.openSheet('🎯 Misi & Pencapaian', () => {
+  this.openSheet('Misi & Pencapaian', () => {
     const e = this.e;
     e.ensureQuests();
     const s = e.state;
@@ -387,7 +387,7 @@ P.regularClaimable = function regularClaimable() {
 };
 
 P.openLangganan = function openLangganan() {
-  this.openSheet('⭐ Buku Langganan', () => {
+  this.openSheet('Buku Langganan', () => {
     const e = this.e;
     const out = [h('div', { class: 'sub' }, 'Pelanggan tetap datang kalau hewan favoritnya sudah kamu jual. Penuhi permintaan kualitasnya agar makin akrab, rela bayar lebih mahal, dan memberi hadiah tiap naik level.')];
     for (const r of REGULARS) {

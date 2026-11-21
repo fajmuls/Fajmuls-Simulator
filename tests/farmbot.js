@@ -1,5 +1,5 @@
 // Pemain otomatis untuk tes dan simulasi keseimbangan peternakan.
-import { FEEDS, rarityIdx } from '../src/core/farm.js';
+import { FEEDS, rarityIdx, habitatOf } from '../src/core/farm.js';
 import { ITEMS, UPGRADES } from '../src/core/catalog.js';
 
 export function makeClock(e, start = 1_000_000) {
@@ -16,7 +16,7 @@ export function farmRound(e, clock, { feedUp = true, expand = true } = {}) {
   const s = e.state;
   // kembangkan usaha
   if (expand) {
-    if (s.ledger.balance > 60000 && s.farm.slots.length < 6) attempt(() => e.buySlot());
+    if (s.ledger.balance > 60000 && s.farm.slots.length < 6) attempt(() => e.buySlot(s.farm.slots.length % 2 ? 'kolam' : 'kandang'));
     for (const it of ITEMS) if (it.unlockCost > 0 && s.ledger.balance > it.unlockCost * 1.5 + 5000) attempt(() => e.unlockSpecies(it.id));
     if (s.ledger.balance > 90000) attempt(() => e.expandShop());
   }
@@ -25,7 +25,9 @@ export function farmRound(e, clock, { feedUp = true, expand = true } = {}) {
     if (slot) return;
     // tanam spesies yang paling sedikit stoknya, tertimbang demand
     const have = (id) => e.animalCount(id) + s.farm.slots.filter((x) => x && x.itemId === id).length * 2;
-    const pick = unlocked.slice().sort((a, b) => (have(a.id) / a.demand) - (have(b.id) / b.demand))[0];
+    const here = unlocked.filter((it) => habitatOf(it.id).id === s.farm.habs[i]);
+    if (!here.length) return;
+    const pick = here.slice().sort((a, b) => (have(a.id) / a.demand) - (have(b.id) / b.demand))[0];
     let feed = null;
     if (feedUp) {
       for (const f of FEEDS.slice().reverse()) {

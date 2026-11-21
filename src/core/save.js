@@ -107,8 +107,10 @@ export function validateState(s) {
   if (!f || !Array.isArray(f.slots) || !Array.isArray(f.animals) || !f.feeds || typeof f.feeds !== 'object' || !f.bibit || typeof f.bibit !== 'object' || !nonNeg(f.nextAnimal) || !nonNeg(f.rolls)) p.push('Peternakan rusak');
   else {
     for (const a of f.animals) if (!a || !isInt(a.id) || typeof a.itemId !== 'string' || typeof a.rarity !== 'string' || !(a.size > 0) || !nonNeg(a.cost)) { p.push('Hewan rusak'); break; }
+    if (!Array.isArray(f.habs) || f.habs.length !== f.slots.length || f.habs.some((x) => typeof x !== 'string')) p.push('Habitat rusak');
     for (const sl of f.slots) if (sl && (typeof sl.itemId !== 'string' || !nonNeg(sl.plantedAt) || !nonNeg(sl.readyAt))) { p.push('Kolam rusak'); break; }
   }
+  if (!s.story || !nonNeg(s.story.ch) || typeof s.story.done !== 'boolean') p.push('Cerita rusak');
   const pt = s.pets;
   if (!pt || !Array.isArray(pt.owned) || !Array.isArray(pt.equipped) || !nonNeg(pt.nextId) || !nonNeg(pt.rolls)) p.push('Pet rusak');
   return p;

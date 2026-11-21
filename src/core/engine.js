@@ -11,11 +11,12 @@ import {
 import { createLedger, credit, debit, sumByType } from './ledger.js';
 import { mulberry32, hashSeed, pickWeighted } from './rng.js';
 import * as farm from './farm.js';
+import * as story from './story.js';
 import { planRegulars, onRegularPaid, maxBondLevel, claimRegular } from './regulars.js';
 import { ensureQuests, trackQuests, claimQuest, checkAchievements, claimAchievement } from './goals.js';
 
 export const DAY_LENGTH_SEC = 90; // lama jendela pelanggan datang pada kecepatan 1x
-export const STATE_VERSION = 5;
+export const STATE_VERSION = 6;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -66,7 +67,8 @@ export function newState(seed = Date.now() % 2147483647) {
     reputation: 10,
     stars: 1,
     arrears: 0, // tunggakan sewa dan gaji
-    stats: { revenue: 0, customers: 0, bestDay: 0, items: {}, sold: 0, bought: 0, bred: 0, questsDone: 0 },
+    stats: { revenue: 0, customers: 0, bestDay: 0, items: {}, sold: 0, bought: 0, bred: 0, questsDone: 0, planted: 0, hatched: 0, bestRar: 0 },
+    story: { ch: 0, done: false, intro: -1 },
     quests: { dayId: 0, weekId: -1, daily: [], weekly: [] }, // misi aktif (dibuat deterministik per hari/minggu)
     ach: {}, // id pencapaian -> { day, claimed }
     bonusPoints: 0, // poin skill tambahan dari hadiah
@@ -85,7 +87,8 @@ export function migrate(input) {
   if (input.v === 1) return migrate(migrateV1(input));
   if (input.v === 2) return migrate(migrateV2(input));
   if (input.v === 3) return migrate(migrateV3(input));
-  if (input.v === 4) return migrateV4(input);
+  if (input.v === 4) return migrate(migrateV4(input));
+  if (input.v === 5) return migrateV5(input);
   return input;
 }
 
@@ -112,6 +115,30 @@ function migrateV3(input) {
   s.tutorial = { step: 0, done: s.day > 1 || Object.keys(s.stock || {}).length > 0 };
   return s;
 }
+
+// v5 -> v6: habitat di peta, cerita, statistik peternakan.
+function migrateV5(input) {
+  const s = structuredClone(input);
+  s.v = 6;
+  const fm = s.farm;
+  const cycle = ['kebun', 'kolam', 'kolam', 'kandang', 'kolam', 'kandang', 'kolam', 'kandang', 'kandang'];
+  const count = {};
+  const want = (h) => ({ kolam: 4, kebun: 2, kandang: 5 }[h]);
+  fm.habs = fm.slots.map((slot, i) => {
+    let h = cycle[i % cycle.length];
+    if (slot) h = farm.habitatOf(slot.itemId).id;
+    count[h] = (count[h] || 0) + 1;
+    return h;
+  });
+  // Pastikan tidak ada habitat yang melebihi batas.
+  for (let i = 0; i < fm.habs.length; i++) {
+    if (!slot_ok(fm.habs, i, want)) fm.habs[i] = ['kolam', 'kebun', 'kandang'].find((h) => fm.habs.filter((x) => x === h).length < want(h)) || 'kolam';
+  }
+  s.stats = { ...s.stats, planted: s.stats?.planted || 0, hatched: s.stats?.hatched || 0, bestRar: s.stats?.bestRar || 0 };
+  s.story = { ch: 0, done: false, intro: -1 };
+  return s;
+}
+const slot_ok = (habs, i, want) => habs.slice(0, i + 1).filter((x) => x === habs[i]).length <= want(habs[i]);
 
 // v4 -> v5: peternakan. Stok lama menjadi hewan common berukuran normal, rak dikosongkan.
 function migrateV4(input) {
@@ -197,7 +224,10 @@ export class GameEngine {
   bibitPrice(itemId) { return farm.bibitPrice(this, itemId); }
   buyBibit(itemId, n) { return farm.buyBibit(this, itemId, n); }
   buyFeed(id, n) { return farm.buyFeed(this, id, n); }
-  buySlot() { return farm.buySlot(this); }
+  buySlot(hab) { return farm.buySlot(this, hab); }
+  storyNow() { return story.storyNow(this); }
+  claimStory() { return story.claimStory(this); }
+  markStoryIntro() { story.markIntro(this); }
   plant(slot, itemId, feedId) { return farm.plant(this, slot, itemId, feedId); }
   slotProgress(slot) { return farm.slotProgress(this, slot); }
   harvest(slot) { return farm.harvest(this, slot); }

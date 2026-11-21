@@ -7,6 +7,8 @@ const round = (n, step) => Math.max(step, Math.round(n / step) * step);
 
 // base = target di bintang 1. scale: 'n' (jumlah) atau 'rp' (uang) naik mengikuti bintang.
 export const QUEST_DEFS = [
+  { key: 'harvest', scope: 'daily', kind: 'harvest', icon: '🌾', text: (g) => `Panen ${g} hewan`, base: 3, step: 1, scale: 'n' },
+  { key: 'plant', scope: 'daily', kind: 'plant', icon: '🌱', text: (g) => `Tanam ${g} bibit`, base: 3, step: 1, scale: 'n' },
   { key: 'sell_units', scope: 'daily', kind: 'sell_units', icon: '🛍️', text: (g) => `Jual ${g} barang`, base: 10, step: 1, scale: 'n' },
   { key: 'serve', scope: 'daily', kind: 'serve', icon: '🙂', text: (g) => `Layani ${g} pelanggan`, base: 8, step: 1, scale: 'n' },
   { key: 'revenue', scope: 'daily', kind: 'revenue', icon: '💰', text: (g) => `Raih omzet Rp ${g.toLocaleString('id-ID')}`, base: 8000, step: 500, scale: 'rp' },
@@ -17,6 +19,7 @@ export const QUEST_DEFS = [
   { key: 'w_serve', scope: 'weekly', kind: 'serve', icon: '🙂', text: (g) => `Layani ${g} pelanggan minggu ini`, base: 70, step: 5, scale: 'n' },
   { key: 'w_sell_cat', scope: 'weekly', kind: 'sell_cat', icon: '🐾', text: (g, cat) => `Jual ${g} ${getCategory(cat).name} minggu ini`, base: 35, step: 5, scale: 'n', cat: true },
   { key: 'w_profit', scope: 'weekly', kind: 'profit', icon: '📈', text: (g) => `Laba bersih Rp ${g.toLocaleString('id-ID')} minggu ini`, base: 20000, step: 1000, scale: 'rp', minStars: 2 },
+  { key: 'w_harvest', scope: 'weekly', kind: 'harvest', icon: '🌾', text: (g) => `Panen ${g} hewan minggu ini`, base: 12, step: 1, scale: 'n' },
   { key: 'w_breed', scope: 'weekly', kind: 'breed', icon: '🥚', text: (g) => `Selesaikan ${g} breeding`, base: 2, step: 1, scale: 'vip', needBreed: true },
 ];
 

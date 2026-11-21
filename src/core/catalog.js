@@ -197,6 +197,8 @@ export const EVENTS = [
   { id: 'murah', name: 'Pasar Murah Grosir', icon: '🏷️', weight: 10, count: 1, wholesale: 0.88, wtp: 0, vip: 1, desc: 'Harga grosir -12%.' },
   { id: 'kolektor', name: 'Kolektor Datang', icon: '🧐', weight: 10, count: 1, wholesale: 1, wtp: 0.05, vip: 2, desc: 'VIP 2x lebih sering dan bayar +5%.' },
   { id: 'sepi', name: 'Hari Sepi', icon: '😴', weight: 8, count: 0.8, wholesale: 1, wtp: 0, vip: 1, desc: 'Pelanggan -20%.' },
+  { id: 'bintang', name: 'Malam Bintang', icon: '🌠', weight: 8, count: 1, wholesale: 1, wtp: 0, vip: 1, luck: 3, desc: 'Peluang rarity panen naik besar hari ini.' },
+  { id: 'angin', name: 'Angin Segar', icon: '🍃', weight: 8, count: 1, wholesale: 1, wtp: 0, vip: 1, grow: 0.25, desc: 'Semua bibit tumbuh 25% lebih cepat.' },
 ];
 
 // ---------- Fungsi bantu ----------
