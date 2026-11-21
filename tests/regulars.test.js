@@ -87,23 +87,6 @@ describe('isi ke target', () => {
   });
 });
 
-describe('harga pasar', () => {
-  it('pelanggan biasa tetap membeli pada harga pasar dan +10%, tanpa batas 50 pelanggan', () => {
-    const e = new GameEngine(newState(3));
-    e.buyStock('cacing', 1, 10);
-    e.state.phase = 'idle';
-    e.startDay();
-    const ref = e.retailRef('cacing', 1);
-    for (const mult of [1, 1.1]) {
-      e.state.prices['cacing:1'] = Math.floor(ref * mult);
-      const r = e.browse({ id: 'x' + mult, type: 'biasa', wants: [{ itemId: 'cacing', qty: 1, noise: 1.0 }] }, 0);
-      expect(r.ok).toBe(true);
-    }
-    e.state.reputation = 1000; e.state.day = 60;
-    expect(e.customerCount()).toBeGreaterThan(50);
-  });
-});
-
 describe('pelayanan manual', () => {
   const setup = () => {
     const e = new GameEngine(newState(3));

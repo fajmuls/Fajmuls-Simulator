@@ -40,8 +40,8 @@ export function planRegulars(engine, day, dayLen) {
     const roll = rng();
     if (roll >= 0.28 + 0.04 * (lvl - 1)) continue;
     const qty = 1 + Math.floor(rng() * (lvl >= 3 ? 3 : 2));
-    const wantsRequest = rng() < 0.5 && engine.maxQuality() >= 2;
-    const minQuality = Math.min(engine.maxQuality(), 2 + Math.floor(lvl / 2));
+    const wantsRequest = rng() < 0.5;
+    const minQuality = Math.min(4, 1 + Math.ceil(lvl / 2)); // tingkat rarity minimum
     picks.push({
       roll,
       c: {

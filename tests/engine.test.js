@@ -131,17 +131,17 @@ describe('engine: hari berjalan', () => {
     e.endDay();
     expect(e.state.stock['cacing:3'].qty).toBe(30);
     expect(e.state.stock['cacing:3'].cost).toBe(e.wholesalePrice('cacing', 3, 1) * 30);
-    expect(e.state.ledger.balance).toBe(cash - 1800);
+    expect(e.state.ledger.balance).toBe(cash - e.mods().rent);
   });
 
   it('sewa yang tak terbayar menjadi tunggakan, saldo tidak pernah negatif', () => {
     const e = new GameEngine(newState(13));
-    e.state.ledger.opening = 1000;
-    e.state.ledger.balance = 1000;
+    e.state.ledger.opening = 200;
+    e.state.ledger.balance = 200;
     const s = runDay(e);
     expect(e.state.ledger.balance).toBeGreaterThanOrEqual(0);
     expect(e.state.arrears).toBeGreaterThan(0);
-    expect(s.rent).toBe(1800);
+    expect(s.rent).toBe(e.mods().rent);
     expect(auditLedger(e.state.ledger)).toEqual([]);
   });
 

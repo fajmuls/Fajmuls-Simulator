@@ -10,11 +10,12 @@ import {
 } from './catalog.js';
 import { createLedger, credit, debit, sumByType } from './ledger.js';
 import { mulberry32, hashSeed, pickWeighted } from './rng.js';
+import * as farm from './farm.js';
 import { planRegulars, onRegularPaid, maxBondLevel, claimRegular } from './regulars.js';
 import { ensureQuests, trackQuests, claimQuest, checkAchievements, claimAchievement } from './goals.js';
 
-export const DAY_LENGTH_SEC = 60; // lama jendela pelanggan datang pada kecepatan 1x
-export const STATE_VERSION = 4;
+export const DAY_LENGTH_SEC = 90; // lama jendela pelanggan datang pada kecepatan 1x
+export const STATE_VERSION = 5;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -71,6 +72,8 @@ export function newState(seed = Date.now() % 2147483647) {
     bonusPoints: 0, // poin skill tambahan dari hadiah
     regulars: {}, // id pelanggan langganan -> { bond, visits, last }
     tutorial: { step: 0, done: false },
+    farm: farm.newFarm(),
+    pets: farm.newPets(),
     history: [],
   };
 }
@@ -81,7 +84,8 @@ export function migrate(input) {
   if (input.v === STATE_VERSION) return input;
   if (input.v === 1) return migrate(migrateV1(input));
   if (input.v === 2) return migrate(migrateV2(input));
-  if (input.v === 3) return migrateV3(input);
+  if (input.v === 3) return migrate(migrateV3(input));
+  if (input.v === 4) return migrateV4(input);
   return input;
 }
 
@@ -106,6 +110,27 @@ function migrateV3(input) {
   s.bonusPoints = 0;
   s.regulars = {};
   s.tutorial = { step: 0, done: s.day > 1 || Object.keys(s.stock || {}).length > 0 };
+  return s;
+}
+
+// v4 -> v5: peternakan. Stok lama menjadi hewan common berukuran normal, rak dikosongkan.
+function migrateV4(input) {
+  const s = structuredClone(input);
+  s.v = 5;
+  s.farm = farm.newFarm();
+  s.pets = farm.newPets();
+  let n = 0;
+  for (const [key, lot] of Object.entries(s.stock || {})) {
+    const { itemId } = parseLotKey(key);
+    const per = lot.qty > 0 ? Math.round(lot.cost / lot.qty) : 0;
+    for (let i = 0; i < lot.qty && n < 200; i++, n++) {
+      s.farm.animals.push({ id: s.farm.nextAnimal++, itemId, rarity: 'common', size: 1, cost: per });
+    }
+  }
+  s.stock = {};
+  s.prices = {};
+  s.restock = {};
+  s.breeding = [];
   return s;
 }
 
@@ -147,6 +172,7 @@ export class GameEngine {
     this.lastRestock = [];
     this.notes = []; // pesan sementara untuk UI (hadiah otomatis dll), tidak disimpan
     this._marketCache = new Map();
+    this.now = () => Date.now(); // dapat diganti pada tes
   }
 
   // Mengganti seluruh state (game baru / impor) tanpa membuat engine baru.
@@ -167,6 +193,23 @@ export class GameEngine {
   claimAchievement(id) { return claimAchievement(this, id); }
   maxBondLevel() { return maxBondLevel(this); }
   claimRegular(id) { return claimRegular(this, id); }
+  // ---------- Peternakan dan pet (lihat farm.js) ----------
+  bibitPrice(itemId) { return farm.bibitPrice(this, itemId); }
+  buyBibit(itemId, n) { return farm.buyBibit(this, itemId, n); }
+  buyFeed(id, n) { return farm.buyFeed(this, id, n); }
+  buySlot() { return farm.buySlot(this); }
+  plant(slot, itemId, feedId) { return farm.plant(this, slot, itemId, feedId); }
+  slotProgress(slot) { return farm.slotProgress(this, slot); }
+  harvest(slot) { return farm.harvest(this, slot); }
+  harvestAll() { return farm.harvestAll(this); }
+  animalCount(itemId) { return farm.animalCount(this, itemId); }
+  dealerSell(id) { return farm.dealerSell(this, id); }
+  hatch(eggId) { return farm.hatch(this, eggId); }
+  equipPet(id) { return farm.equipPet(this, id); }
+  unequipPet(id) { return farm.unequipPet(this, id); }
+  releasePet(id) { return farm.releasePet(this, id); }
+  petSlots() { return farm.petSlots(this); }
+  farmBuffs() { return farm.farmBuffs(this); }
   takeNotes() { const n = this.notes; this.notes = []; return n; }
 
   _requireIdle() {
@@ -216,7 +259,7 @@ export class GameEngine {
     const rentCut = Math.min(0.6, P.rent + 0.08 * sk('juragan'));
     const rentBase = Math.round(DAILY_RENT * (1 + 0.5 * (s.shopLevel - 1)));
     const rent = Math.max(0, Math.round(rentBase * (1 - rentCut)));
-    const repGain = 1 + 0.1 * sk('ramah') + (bf('sahabat') ? 0.5 : 0);
+    const repGain = (1 + 0.1 * sk('ramah') + (bf('sahabat') ? 0.5 : 0)) * (hasStaff('satpam') ? 1.1 : 1);
     const repLoss = Math.max(0.1, 1 - 0.1 * sk('ramah') - (bf('sahabat') ? 0.5 : 0));
     const payTime = Math.max(0.15, 1 - 0.15 * up('kasir_modern') - 0.12 * sk('kasir_cepat') - (hasStaff('kasir') ? 0.45 : 0));
     return { count, disc, wtp, vip, rent, repGain, repLoss, payTime, event: ev };
@@ -817,8 +860,9 @@ export class GameEngine {
 
   customerCount() {
     const s = this.state;
-    const base = 12 + s.reputation * 0.1 + Math.min(s.day, 60) * 0.15;
-    return clamp(Math.round(base * this.mods().count * this.priceAttract()), 5, 1000);
+    // Pelanggan sedikit: toko dilayani langsung satu per satu.
+    const base = 4 + s.reputation * 0.05 + Math.min(s.day, 80) * 0.06;
+    return clamp(Math.round(base * this.mods().count), 3, 40);
   }
 
   _qtyCap(item) {
@@ -831,21 +875,20 @@ export class GameEngine {
     const m = this.mods();
     const rng = mulberry32(hashSeed(s.seed, 'plan', s.day));
     const n = this.customerCount();
-    const items = this.unlockedItems().map((i) => ({ id: i.id, weight: i.demand * (this.totalQty(i.id) > 0 ? 3 : 1) }));
+    const items = this.unlockedItems().map((i) => ({ id: i.id, weight: i.demand * (this.animalCount(i.id) > 0 ? 3 : 1) }));
     const types = CUSTOMER_TYPES.map((t) => ({ ...t, weight: t.weight * (t.id === 'vip' ? m.vip : 1) }));
     const times = [];
     for (let i = 0; i < n; i++) times.push(rng() * DAY_LENGTH_SEC);
     times.sort((a, b) => a - b);
     const base = times.map((t, i) => {
       const type = pickWeighted(rng, types);
-      const wantCount = rng() < 0.35 ? 2 : 1;
+      const wantCount = rng() < 0.2 ? 2 : 1;
       const pool = items.slice();
       const wants = [];
       for (let w = 0; w < wantCount && pool.length; w++) {
         const pick = pickWeighted(rng, pool);
         pool.splice(pool.findIndex((p) => p.id === pick.id), 1);
-        const cap = Math.min(type.maxQty, this._qtyCap(getItem(pick.id)));
-        wants.push({ itemId: pick.id, qty: 1 + Math.floor(rng() * cap), noise: 1.0 + rng() * 0.08 });
+        wants.push({ itemId: pick.id, qty: 1, noise: 1.0 + rng() * 0.08 });
       }
       return { id: `${s.day}-${i + 1}`, type: type.id, spawnAt: t, wants };
     });
@@ -940,7 +983,7 @@ export class GameEngine {
     const cust = this.plan.find((c) => c.id === customerId);
     if (cust?.type === 'vip') this.track('vip', 1);
     if (opts.fast) {
-      const tip = Math.max(1, Math.round(total * 0.1));
+      const tip = Math.max(1, Math.round(total * (0.1 + this.farmBuffs().tip)));
       credit(this.state.ledger, this.state.day, 'tip', tip, `Tip pelayanan cepat #${customerId}`);
       this.today.tips += tip;
     }
@@ -957,7 +1000,32 @@ export class GameEngine {
     const want = customer.wants[wantIdx];
     const type = this._typeOf(customer);
     const minQ = Math.max(type.minQuality, customer.request?.itemId === want.itemId ? customer.request.minQuality : 1);
-    return { itemId: want.itemId, qty: want.qty, minQuality: minQ };
+    return { itemId: want.itemId, qty: 1, minQuality: minQ };
+  }
+
+  // Pemain menyerahkan satu hewan ke pelanggan. Harga = nilai hewan (rarity x ukuran) dengan batas per tipe pelanggan.
+  serveAnimal(customer, wantIdx, animalId) {
+    if (this.state.phase !== 'open') throw new Error('Toko belum buka');
+    const want = customer.wants[wantIdx];
+    const fm = this.state.farm;
+    const idx = fm.animals.findIndex((a) => a.id === animalId);
+    if (idx < 0) return { ok: false, itemId: want.itemId, reason: 'habis' };
+    const a = fm.animals[idx];
+    if (a.itemId !== want.itemId) return { ok: false, itemId: want.itemId, reason: 'salah' };
+    const info = this.orderInfo(customer, wantIdx);
+    const level = farm.rarityIdx(a.rarity) + 1;
+    if (level < info.minQuality) return { ok: false, itemId: want.itemId, reason: 'kualitas' };
+    const type = this._typeOf(customer);
+    const m = this.mods();
+    const item = getItem(a.itemId);
+    const raw = farm.animalValue(a) * want.noise * (1 + m.wtp + this.farmBuffs().value) * (1 + (customer.bonusWtp || 0));
+    const cap = item.retail * (farm.PAY_CAP[type.id] ?? 2) * (customer.regularId ? 1.5 : 1);
+    const price = Math.max(1, Math.round(Math.min(raw, cap)));
+    fm.animals.splice(idx, 1);
+    const list = this.reserved.get(customer.id) || [];
+    list.push({ key: lotKey(a.itemId, level), qty: 1, cost: a.cost, revenue: price, animal: a });
+    this.reserved.set(customer.id, list);
+    return { ok: true, itemId: a.itemId, quality: level, qty: 1, unitPrice: price, total: price, animal: a, capped: raw > cap };
   }
 
   customerLeft(customerId, satisfied) {
@@ -993,6 +1061,7 @@ export class GameEngine {
     // Kembalikan pesanan yang belum dibayar (jaga integritas stok dan uang).
     for (const [id, list] of this.reserved) {
       for (const r of list) {
+        if (r.animal) { s.farm.animals.push(r.animal); continue; }
         const lot = s.stock[r.key] || { qty: 0, cost: 0 };
         lot.qty += r.qty;
         lot.cost += r.cost;
@@ -1059,7 +1128,7 @@ export class GameEngine {
     // Reputasi dan bintang (bintang tidak pernah turun)
     const t = this.today;
     // Reputasi naik pelan dan makin sulit mendekati 100. Disimpan dengan satu desimal.
-    const rawDelta = t.served * 0.13 * m.repGain * (1 - s.reputation / 140) - t.lost * 0.1 * m.repLoss - (anyLate ? 2 : 0);
+    const rawDelta = t.served * 0.5 * m.repGain * (1 - s.reputation / 140) - t.lost * 0.2 * m.repLoss - (anyLate ? 2 : 0);
     const floorRep = Math.max(5, STAR_THRESH[s.stars - 1]);
     const newRep = clamp(Math.round((s.reputation + rawDelta) * 10) / 10, floorRep, 100);
     const repDelta = Math.round((newRep - s.reputation) * 10) / 10;
@@ -1127,7 +1196,7 @@ export class GameEngine {
   }
 
   // ---------- Pengeluaran: perawatan, pajak, sakit, pencurian ----------
-  animalCount() {
+  stockAnimalCount() {
     let n = 0;
     for (const [key, lot] of Object.entries(this.state.stock)) if (getCategory(getItem(parseLotKey(key).itemId).cat).animal) n += lot.qty;
     return n;
@@ -1135,7 +1204,7 @@ export class GameEngine {
 
   upkeep() {
     const s = this.state;
-    const base = this.animalCount() * UPKEEP_PER_ANIMAL * (1 + UPKEEP_SHOP_STEP * (s.shopLevel - 1));
+    const base = this.stockAnimalCount() * UPKEEP_PER_ANIMAL * (1 + UPKEEP_SHOP_STEP * (s.shopLevel - 1));
     return Math.round(base * (s.staff.perawat ? 0.7 : 1));
   }
 

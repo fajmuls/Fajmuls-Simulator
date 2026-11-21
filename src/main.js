@@ -6,6 +6,7 @@ import { SaveManager, serialize, deserialize } from './core/save.js';
 import { ShopScene, W, H } from './game/ShopScene.js';
 import { UI, toast, h } from './ui.js';
 import './screens.js';
+import './farmscreens.js';
 import { audio } from './audio.js';
 
 const loadStart = performance.now();
@@ -86,7 +87,6 @@ async function boot() {
   const shop = new ShopScene(engine, {
     onReady: (s) => {
       scene = s;
-      s.setManual(ui.manual);
       ui.refreshHud();
       finishLoading();
       setTimeout(() => ui.startTutorial(), 2400);

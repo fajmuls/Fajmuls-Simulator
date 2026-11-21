@@ -26,4 +26,5 @@ npm run build    # build produksi (dist/)
 - v3: karyawan Satpam dan Badut, Ramuan Obat, Renovasi Toko, statistik terlaris
 - v3: efek suara dan musik latar (dibuat dengan WebAudio), animasi loading
 - v4: misi harian/mingguan, 20 pencapaian, 12 pelanggan langganan (Buku Langganan, tip, hadiah level), tutorial 8 langkah, riwayat notifikasi, isi stok ke target, huruf besar dan kontras tinggi, tombol pasang aplikasi
+- v5 (rombak total): tanpa otomatis. Beli bibit/anak ikan di Pasar, tanam di Kolam, tunggu tumbuh, panen hewan dengan ukuran dan rarity (common sampai secret). Pakan lebih mahal = peluang rarity lebih tinggi. Gacha telur pet dengan buff. Layani pelanggan langsung (tap rak, serahkan hewan). Pengepul beli sisa 35%. Ilustrasi SVG, karyawan terlihat di toko.
 - PWA: bisa di-install dan jalan offline (siap PWA Builder)

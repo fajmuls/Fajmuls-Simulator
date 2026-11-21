@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
-import { CATEGORIES, getItem, getQuality, itemsOf } from '../core/catalog.js';
+import { CATEGORIES, ITEMS, STAFF, getItem, itemsOf } from '../core/catalog.js';
+import { RARITIES } from '../core/farm.js';
+import { animalSVG, staffSVG, svgUri } from '../art.svg.js';
 import { DAY_LENGTH_SEC } from '../core/engine.js';
 import { hashSeed } from '../core/rng.js';
 import { regularDef } from '../core/regulars.js';
@@ -19,8 +21,6 @@ const PAY_X = 300;
 const PAY_Y = 342;
 const QUEUE_GAP = 26;
 const WALK_SPEED = 64; // piksel per detik (pada kecepatan 1x)
-const BROWSE_TIME = 0.9;
-const PAY_TIME = 0.7;
 
 const rupiah = (n) => 'Rp ' + n.toLocaleString('id-ID');
 const shelfX = (i) => 40 + i * 70;
@@ -41,11 +41,15 @@ export class ShopScene extends Phaser.Scene {
     this.popups = [];
     this.shelfSprites = [];
     this._lastTick = '';
-    this.manual = false;
     this.paused = false;
     this.carry = null;
     this.carryIcon = null;
     this.playerTarget = null;
+  }
+
+  preload() {
+    for (const it of ITEMS) this.load.svg(`icon_${it.id}`, svgUri(animalSVG(it)), { width: 30, height: 30 });
+    for (const st of STAFF) this.load.svg(`staff_${st.id}`, svgUri(staffSVG(st.id)), { width: 44, height: 44 });
   }
 
   create() {
@@ -75,6 +79,7 @@ export class ShopScene extends Phaser.Scene {
 
     this.playerX = 272;
     this.input.on('pointerdown', (p) => this._onTap(p.worldX, p.worldY));
+    this.staffSprites = {};
     this.refreshShelves();
     this.hooks.onReady?.(this);
   }
@@ -94,7 +99,7 @@ export class ShopScene extends Phaser.Scene {
         return;
       }
       const rows = itemsOf(cat.id)
-        .map((it) => ({ it, qty: e.totalQty(it.id) }))
+        .map((it) => ({ it, qty: e.animalCount(it.id) }))
         .filter((r) => r.qty > 0)
         .sort((a, b) => b.it.tier - a.it.tier)
         .slice(0, 4);
@@ -140,6 +145,25 @@ export class ShopScene extends Phaser.Scene {
     }
     const st = e.state.stars;
     this.signStars.setText('★'.repeat(st) + '☆'.repeat(5 - st) + `  Toko Lv ${lvl}`);
+    this.refreshStaff();
+  }
+
+  // Karyawan yang dipekerjakan tampil di toko dan memberi buff (tidak melayani otomatis).
+  refreshStaff() {
+    const spots = { kasir: [330, 330], pramuniaga: [196, 268], penjaga: [96, 262], satpam: [44, 330], badut: [70, 372], perawat: [150, 266] };
+    for (const st of STAFF) {
+      const on = !!this.engine.state.staff[st.id];
+      let sp = this.staffSprites[st.id];
+      if (on && !sp && this.textures.exists(`staff_${st.id}`)) {
+        const [x, y] = spots[st.id];
+        sp = this.add.image(x, y, `staff_${st.id}`).setOrigin(0.5, 1).setDepth(y);
+        sp.baseY = y;
+        this.staffSprites[st.id] = sp;
+      } else if (!on && sp) {
+        sp.destroy();
+        delete this.staffSprites[st.id];
+      }
+    }
   }
 
   // ---------- Kendali dari UI ----------
@@ -231,18 +255,25 @@ export class ShopScene extends Phaser.Scene {
     }
     this.owner.y = this.ownerBaseY + Math.sin(time / (moving ? 90 : 400)) * (moving ? 1.8 : 1.2);
     this.owner.setDepth(this.ownerBaseY + 1);
-    if (this.carryIcon) this.carryIcon.setPosition(this.owner.x, this.owner.y - 40).setDepth(9998);
+    if (this.carryIcon) this.carryIcon.setPosition(this.owner.x, this.owner.y - 40);
+    if (this.carryRing) this.carryRing.setPosition(this.owner.x, this.owner.y - 40);
+    for (const sp of Object.values(this.staffSprites || {})) sp.y = sp.baseY + Math.sin(time / 500 + sp.baseY) * 1.2;
   }
 
-  // ---------- Mode manual: pemain bergerak, mengambil barang, menyerahkan ke pelanggan ----------
-  setManual(v) { this.manual = !!v; }
-
+  // ---------- Pelayanan langsung: pemain bergerak, mengambil hewan, menyerahkan ke pelanggan ----------
   setPaused(v) { this.paused = !!v; }
 
-  setCarry(itemId, quality) {
-    this.carry = itemId ? { itemId, quality } : null;
+  setCarry(animal) {
+    this.carry = animal || null;
     this.carryIcon?.destroy();
-    this.carryIcon = itemId ? this.add.image(this.owner.x, this.owner.y - 40, `icon_${itemId}`).setScale(1.1) : null;
+    this.carryRing?.destroy();
+    this.carryIcon = null;
+    this.carryRing = null;
+    if (animal) {
+      const col = Phaser.Display.Color.HexStringToColor(RARITIES.find((r) => r.id === animal.rarity).color).color;
+      this.carryRing = this.add.circle(this.owner.x, this.owner.y - 40, 15, col, 0.55).setStrokeStyle(2, col).setDepth(9997);
+      this.carryIcon = this.add.image(this.owner.x, this.owner.y - 40, `icon_${animal.itemId}`).setDepth(9998);
+    }
   }
 
   waitingOrders() {
@@ -254,7 +285,7 @@ export class ShopScene extends Phaser.Scene {
   }
 
   _onTap(x, y) {
-    if (!this.dayActive || !this.manual || this.paused) return;
+    if (!this.dayActive || this.paused) return;
     // pelanggan menunggu
     const cust = this.customers.find((c) => c.state === 'waiting' && Math.abs(x - c.x) < 16 && y > c.y - 70 && y < c.y + 6);
     if (cust) {
@@ -282,18 +313,18 @@ export class ShopScene extends Phaser.Scene {
 
   _beginOrder(c) {
     c.state = 'waiting';
-    c.patience = c.maxPatience = 30;
+    c.patience = c.maxPatience = Math.round(45 * (1 + this.engine.farmBuffs().patience));
     c.order = this.engine.orderInfo(c.data, c.wantIdx);
     this._clearBubble(c);
     const o = c.order;
-    c.bubble = this._makeBubble(c, `${o.qty}× ${getItem(o.itemId).name.split(' ')[0]}${o.minQuality > 1 ? ' ★' + o.minQuality + '+' : ''}`, '#1e3a8a', o.itemId);
+    c.bubble = this._makeBubble(c, `${getItem(o.itemId).name.split(' ').slice(-1)[0]}${o.minQuality > 1 ? ' ≥' + RARITIES[o.minQuality - 1].name : ''}`, '#1e3a8a', o.itemId);
     if (!c.bar) c.bar = this.add.rectangle(c.x, c.y - 36, 26, 3, 0x4ade80).setDepth(9999);
-    if (this.engine.totalQty(o.itemId) === 0) this._orderFail(c, 'habis');
+    if (this.engine.animalCount(o.itemId) === 0) c.noStock = true;
   }
 
   _serve(c) {
     if (c.state !== 'waiting' || !this.carry) return;
-    const res = this.engine.browse(c.data, c.wantIdx, this.carry);
+    const res = this.engine.serveAnimal(c.data, c.wantIdx, this.carry.id);
     if (!res.ok) {
       const msg = { salah: 'Bukan itu!', kualitas: 'Kurang bagus', mahal: 'Kemahalan!', habis: 'Stok habis' }[res.reason] || '?';
       this._flash(c.x, c.y - 80, msg, '#fca5a5');
@@ -356,44 +387,14 @@ export class ShopScene extends Phaser.Scene {
         fontFamily: 'monospace', fontSize: '9px', color: '#2b1604', backgroundColor: '#fbbf24', padding: { x: 3, y: 1 },
       }).setOrigin(0.5, 1).setDepth(9999);
     }
-    c.manual = this.manual && !data.regularId ? true : this.manual;
     this.customers.push(c);
-    if (c.manual) {
-      if (this.queue.length >= 7) { this._popup(c.x + 10, c.y - 30, 'Antre penuh', '#fca5a5'); this._leave(c, false); } else this._routeToQueue(c);
-    } else this._routeToShelf(c);
+    if (this.queue.length >= 7) { this._popup(c.x + 10, c.y - 30, 'Antre penuh', '#fca5a5'); this._leave(c, false); } else this._routeToQueue(c);
   }
 
   _pushWaypoints(c, pts, then) {
     c.wp = pts;
     c.then = then;
     c.state = 'walk';
-  }
-
-  _routeToShelf(c) {
-    const want = c.data.wants[c.wantIdx];
-    const idx = catIdx(getItem(want.itemId).cat);
-    const sx = shelfX(idx) + (c.data.id.length % 3 - 1) * 4;
-    const pts = [];
-    if (c.y > AISLE_Y + 4) pts.push({ x: Math.max(c.x, DOOR_X), y: ROAD_Y }, { x: DOOR_X, y: ROAD_Y }, { x: DOOR_X, y: AISLE_Y });
-    else if (c.y < AISLE_Y - 4) pts.push({ x: c.x, y: AISLE_Y });
-    pts.push({ x: sx, y: AISLE_Y }, { x: sx, y: SHELF_STAND_Y });
-    this._pushWaypoints(c, pts, () => this._startBrowse(c));
-  }
-
-  _startBrowse(c) {
-    c.state = 'browse';
-    c.timer = BROWSE_TIME;
-    const res = this.engine.browse(c.data, c.wantIdx);
-    let text;
-    if (res.ok) {
-      c.bought = true;
-      text = `${res.qty}× ${getItem(res.itemId).name.split(' ')[0]}`;
-      c.bubble = this._makeBubble(c, text, '#166534', res.itemId);
-    } else {
-      const msg = { habis: 'Habis...', mahal: 'Kemahalan!', kualitas: 'Kurang bagus' }[res.reason] || '?';
-      c.bubble = this._makeBubble(c, msg, '#991b1b');
-    }
-    this.refreshShelves();
   }
 
   _makeBubble(c, text, bg, itemId) {
@@ -415,19 +416,6 @@ export class ShopScene extends Phaser.Scene {
     }
   }
 
-  _afterBrowse(c) {
-    this._clearBubble(c);
-    c.wantIdx += 1;
-    if (c.wantIdx < c.data.wants.length) {
-      const x = c.x;
-      this._pushWaypoints(c, [{ x, y: AISLE_Y }], () => this._routeToShelf(c));
-    } else if (c.bought) {
-      this._routeToQueue(c);
-    } else {
-      this._leave(c, false);
-    }
-  }
-
   _routeToQueue(c) {
     this.queue.push(c);
     const slot = this.queue.length - 1;
@@ -436,7 +424,7 @@ export class ShopScene extends Phaser.Scene {
     const pts = [{ x: c.x, y: AISLE_Y }];
     if (sx >= 230) pts.push({ x: 224, y: AISLE_Y }, { x: 224, y: PAY_Y }, { x: sx, y: PAY_Y });
     else pts.push({ x: sx, y: AISLE_Y }, { x: sx, y: PAY_Y });
-    this._pushWaypoints(c, pts, () => { if (c.manual) this._beginOrder(c); else c.state = 'queued'; });
+    this._pushWaypoints(c, pts, () => this._beginOrder(c));
   }
 
   _slotX(k) {
@@ -504,20 +492,6 @@ export class ShopScene extends Phaser.Scene {
     } else if (c.state === 'failing') {
       c.timer -= dt;
       if (c.timer <= 0) { c.bar?.setSize(26, 3); this._nextWant(c); }
-    } else if (c.state === 'browse') {
-      c.timer -= dt;
-      if (c.timer <= 0) this._afterBrowse(c);
-    } else if (c.state === 'paying') {
-      c.timer -= dt;
-      if (c.timer <= 0) {
-        const total = this.engine.pay(c.data.id);
-        if (total > 0) {
-          this._popup(c.x, c.y - 50, '+' + rupiah(total), '#facc15');
-          this.hooks.onSale?.(total);
-        }
-        this.queue = this.queue.filter((q) => q !== c);
-        this._leave(c, true);
-      }
     }
     c.sprite.setPosition(c.x, c.y);
     c.sprite.setDepth(c.y);
@@ -532,16 +506,13 @@ export class ShopScene extends Phaser.Scene {
   _updateQueue(dt) {
     this.queue.forEach((c, k) => {
       c.slot = k;
-      if (c.state !== 'queued' && c.state !== 'paying' && c.state !== 'waiting' && c.state !== 'failing') return;
+      if (c.state !== 'waiting' && c.state !== 'failing') return;
       const tx = this._slotX(k);
       const dx = tx - c.x;
       if (Math.abs(dx) > 0.5) {
         const step = Math.min(Math.abs(dx), WALK_SPEED * dt) * Math.sign(dx);
         c.x += step;
         c.sprite.setFlipX(dx < 0);
-      } else if (k === 0 && c.state === 'queued') {
-        c.state = 'paying';
-        c.timer = PAY_TIME * this.engine.mods().payTime;
       }
     });
   }
@@ -567,4 +538,3 @@ export class ShopScene extends Phaser.Scene {
   }
 }
 
-export { getQuality };

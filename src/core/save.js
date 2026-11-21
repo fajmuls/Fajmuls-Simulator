@@ -103,6 +103,14 @@ export function validateState(s) {
   if (!s.regulars || typeof s.regulars !== 'object') p.push('Langganan rusak');
   else for (const r of Object.values(s.regulars)) if (!r || !nonNeg(r.bond) || !nonNeg(r.visits) || !nonNeg(r.last) || (r.claimed !== undefined && !nonNeg(r.claimed))) { p.push('Langganan rusak'); break; }
   if (!s.tutorial || !nonNeg(s.tutorial.step) || typeof s.tutorial.done !== 'boolean') p.push('Tutorial rusak');
+  const f = s.farm;
+  if (!f || !Array.isArray(f.slots) || !Array.isArray(f.animals) || !f.feeds || typeof f.feeds !== 'object' || !f.bibit || typeof f.bibit !== 'object' || !nonNeg(f.nextAnimal) || !nonNeg(f.rolls)) p.push('Peternakan rusak');
+  else {
+    for (const a of f.animals) if (!a || !isInt(a.id) || typeof a.itemId !== 'string' || typeof a.rarity !== 'string' || !(a.size > 0) || !nonNeg(a.cost)) { p.push('Hewan rusak'); break; }
+    for (const sl of f.slots) if (sl && (typeof sl.itemId !== 'string' || !nonNeg(sl.plantedAt) || !nonNeg(sl.readyAt))) { p.push('Kolam rusak'); break; }
+  }
+  const pt = s.pets;
+  if (!pt || !Array.isArray(pt.owned) || !Array.isArray(pt.equipped) || !nonNeg(pt.nextId) || !nonNeg(pt.rolls)) p.push('Pet rusak');
   return p;
 }
 

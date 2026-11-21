@@ -52,9 +52,10 @@ export const ITEMS = [
 ];
 
 export const CUSTOMER_TYPES = [
-  { id: 'biasa', name: 'Pembeli Biasa', weight: 0.6, wtp: 1.1, minQuality: 1, maxQty: 2, color: 0x3b82f6 },
-  { id: 'pelit', name: 'Si Pelit', weight: 0.25, wtp: 1.0, minQuality: 1, maxQty: 3, color: 0x84cc16 },
-  { id: 'vip', name: 'Pelanggan VIP', weight: 0.15, wtp: 1.4, minQuality: 3, maxQty: 2, color: 0xe11d48 },
+  { id: 'biasa', name: 'Pembeli Biasa', weight: 0.6, wtp: 1.0, minQuality: 1, maxQty: 1, color: 0x3b82f6 },
+  { id: 'pelit', name: 'Si Pelit', weight: 0.2, wtp: 1.0, minQuality: 1, maxQty: 1, color: 0x84cc16 },
+  { id: 'vip', name: 'Pelanggan VIP', weight: 0.12, wtp: 1.0, minQuality: 2, maxQty: 1, color: 0xe11d48 },
+  { id: 'kolektor', name: 'Kolektor', weight: 0.08, wtp: 1.0, minQuality: 3, maxQty: 1, color: 0x9333ea },
 ];
 
 // ---------- Reputasi dan bintang ----------
@@ -103,7 +104,7 @@ export const BASE_CAPACITY = 60;
 export const CAPACITY_PER_RAK = 40;
 export const BASE_MAX_QUALITY = 3;
 export const START_CASH = 50000;
-export const DAILY_RENT = 1800;
+export const DAILY_RENT = 600;
 export const LEDGER_KEEP = 500;
 
 // ---------- Skill ----------
@@ -142,12 +143,12 @@ export const POTIONS = [
 
 // ---------- Karyawan ----------
 export const STAFF = [
-  { id: 'kasir', name: 'Kasir', icon: '🧾', wage: 3000, needStars: 2, desc: 'Pembayaran 45% lebih cepat.' },
+  { id: 'kasir', name: 'Kasir', icon: '🧾', wage: 3000, needStars: 2, desc: 'Tip pelayanan cepat +5%.' },
   { id: 'pramuniaga', name: 'Pramuniaga', icon: '🙋', wage: 3500, needStars: 2, desc: 'Pelanggan +10%.' },
-  { id: 'penjaga', name: 'Penjaga Stok', icon: '📋', wage: 4000, needStars: 3, desc: 'Mengisi ulang stok yang hampir habis setiap toko dibuka.' },
-  { id: 'satpam', name: 'Satpam', icon: '💂', wage: 4500, needStars: 2, desc: 'Pencurian turun 80%.' },
-  { id: 'badut', name: 'Badut Penarik Pengunjung', icon: '🤡', wage: 3500, needStars: 2, desc: 'Mengajak pengunjung masuk: pelanggan +15%.' },
-  { id: 'perawat', name: 'Perawat Hewan', icon: '🩺', wage: 5000, needStars: 3, desc: 'Breeding 1 hari lebih cepat dan peluang kualitas naik +10%.' },
+  { id: 'penjaga', name: 'Penjaga Stok', icon: '📋', wage: 4000, needStars: 3, desc: 'Pelanggan 15% lebih sabar menunggu.' },
+  { id: 'satpam', name: 'Satpam', icon: '💂', wage: 4500, needStars: 2, desc: 'Reputasi naik 10% lebih cepat.' },
+  { id: 'badut', name: 'Badut Penarik Pengunjung', icon: '🤡', wage: 3500, needStars: 2, desc: 'Pelanggan +15% dan 20% lebih sabar menunggu.' },
+  { id: 'perawat', name: 'Perawat Hewan', icon: '🩺', wage: 5000, needStars: 3, desc: 'Bibit tumbuh 15% lebih cepat.' },
 ];
 
 // ---------- Investasi ----------

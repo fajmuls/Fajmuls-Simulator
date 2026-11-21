@@ -123,16 +123,6 @@ export function buildIconTextures(scene) {
   for (const [name, def] of Object.entries(ICONS)) {
     addCanvas(scene, `icon_${name}`, drawGrid(def.rows, def.pal, 3));
   }
-  for (const it of ITEMS) {
-    const tpl = TEMPLATES[it.icon];
-    if (tpl) {
-      addCanvas(scene, `icon_${it.id}`, drawGrid(tpl, { E: '#1b1b1b', ...it.pal }, 3));
-    } else {
-      // perlengkapan memakai ikon dasar
-      const base = ICONS[it.icon];
-      addCanvas(scene, `icon_${it.id}`, drawGrid(base.rows, base.pal, 3));
-    }
-  }
 }
 
 // ---------- Latar toko ----------

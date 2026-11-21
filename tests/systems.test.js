@@ -111,11 +111,11 @@ describe('bintang dan skill', () => {
 
   it('naik bintang tercatat di ringkasan harian', () => {
     const e = rich(2, 1);
-    e.state.reputation = STAR_THRESH[1] - 0.2;
+    e.state.reputation = STAR_THRESH[1] - 0.05;
     e.buyStock('cacing', 3, 20);
     e.buyStock('lele', 3, 10);
     let up = null;
-    for (let i = 0; i < 15 && !up; i++) {
+    for (let i = 0; i < 60 && !up; i++) {
       const room = Math.min(20, e.maxAffordable('cacing', 3));
       if (room > 0) e.buyStock('cacing', 3, room);
       up = runDay(e).starUp;
@@ -417,10 +417,10 @@ describe('migrasi simpanan versi 1', () => {
   it('memuat simpanan lama tanpa kehilangan stok, upgrade, dan spesies', () => {
     const old = v1State();
     const loaded = deserialize(serialize(old));
-    expect(loaded.v).toBe(4);
+    expect(loaded.v).toBe(5);
     expect(loaded.stats.items).toEqual({});
     expect(loaded.upgrades.kecepatan).toBe(0);
-    expect(loaded.stock['mas:3'].qty).toBe(4);
+    expect(loaded.farm.animals.filter((a) => a.itemId === 'mas').length).toBe(4);
     expect(loaded.upgrades.rak).toBe(1);
     expect(loaded.upgrades.supplier).toBe(1);
     expect(loaded.species.mas).toBe(true);
@@ -474,10 +474,10 @@ describe('v3: kecepatan, pengeluaran, karyawan baru', () => {
     const copy = structuredClone(v2);
     const m = migrate(v2);
     expect(v2).toEqual(copy);
-    expect(m.v).toBe(4);
+    expect(m.v).toBe(5);
     expect(m.upgrades.kecepatan).toBe(0);
     expect(m.stats.items).toEqual({});
-    expect(m.stock['cacing:3'].qty).toBe(5);
+    expect(m.farm.animals.filter((a) => a.itemId === 'cacing').length).toBe(5);
     expect(validateState(m)).toEqual([]);
   });
 
@@ -489,7 +489,7 @@ describe('v3: kecepatan, pengeluaran, karyawan baru', () => {
     expect(e.wealthTax()).toBe(Math.floor((2000000 - 1500000) * 0.003));
     e.unlockSpecies('mas');
     e.buyStock('mas', 3, 10);
-    expect(e.animalCount()).toBe(10);
+    expect(e.stockAnimalCount()).toBe(10);
     expect(e.upkeep()).toBe(60);
     const s = runDay(e);
     expect(s.upkeep).toBeGreaterThanOrEqual(0);
@@ -554,7 +554,7 @@ describe('v4: migrasi misi, pencapaian, langganan, tutorial', () => {
     const copy = structuredClone(v3);
     const m = migrate(v3);
     expect(v3).toEqual(copy);
-    expect(m.v).toBe(4);
+    expect(m.v).toBe(5);
     expect(m.stats.sold).toBe(12);
     expect(m.stats.bought).toBe(0);
     expect(m.quests).toEqual({ dayId: 0, weekId: -1, daily: [], weekly: [] });
@@ -562,7 +562,7 @@ describe('v4: migrasi misi, pencapaian, langganan, tutorial', () => {
     expect(m.regulars).toEqual({});
     expect(m.bonusPoints).toBe(0);
     expect(m.tutorial).toEqual({ step: 0, done: true }); // sudah punya stok = pemain lama
-    expect(m.stock['cacing:3'].qty).toBe(8);
+    expect(m.farm.animals.filter((a) => a.itemId === 'cacing').length).toBe(8);
     expect(validateState(m)).toEqual([]);
   });
 

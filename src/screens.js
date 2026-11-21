@@ -25,7 +25,6 @@ P.openFitur = function openFitur() {
       ['🏬', 'Upgrade & Perluas', `Toko Lv ${s.shopLevel}`, () => this.openUpgrade(), null],
       ['🧪', 'Ramuan', s.stars >= 2 ? `${Object.keys(s.buffs).length} aktif` : '🔒 ★2', () => this.openRamuan(), null],
       ['🧑‍🤝‍🧑', 'Karyawan', `${Object.keys(s.staff).length} bekerja`, () => this.openKaryawan(), null],
-      ['🥚', 'Breeding', e.breedSlots() ? `${s.breeding.length}/${e.breedSlots()} kandang` : '🔒 skill', () => this.openBreeding(), ready || null],
       ['🏦', 'Bank', s.stars >= 2 ? `${s.loans.length} pinjaman` : '🔒 ★2', () => this.openBank(), null],
       ['📊', 'Investasi', s.stars >= 3 ? `Kekayaan ${rpShort(e.netWorth())}` : '🔒 ★3', () => this.openInvestasi(), null],
     ];
