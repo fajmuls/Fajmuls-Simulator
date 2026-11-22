@@ -60,7 +60,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* Dock */
 #dock { background: var(--panel); border-top: 3px solid var(--line); padding: 7px 8px 8px; display: grid; gap: 7px; z-index: 5; }
 .dock-main { display: flex; gap: 7px; align-items: stretch; }
-.dock-tabs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+.dock-tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
 .btn {
   border: 2.5px solid var(--line); border-radius: var(--radius); padding: 9px 12px; font-weight: 800;
   background: var(--accent); color: var(--text); min-height: 44px; box-shadow: var(--shadow); display: inline-flex; align-items: center; justify-content: center; gap: 7px;
@@ -214,3 +214,10 @@ html.contrast { --bg: #fff; --panel: #fff; --panel-2: #f1e7d1; --muted: #2b1d12;
 
 .chips.wrap { flex-wrap: wrap; overflow: visible; }
 .sheet { max-height: min(86dvh, 720px); }
+
+#float .navl, #float .navr { position: absolute; bottom: 12px; }
+#float .navl { left: 10px; } #float .navr { right: 10px; }
+.tab.locked { opacity: .45; }
+
+.stepper button { width: 36px; height: 36px; }
+.stepper .qbtn { width: auto; min-width: 48px; }

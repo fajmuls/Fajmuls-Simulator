@@ -2,7 +2,7 @@
 import { ITEMS, CATEGORIES, getItem, itemsOf } from './core/catalog.js';
 import {
   RARITIES, FEEDS, EGGS, PET_KINDS, SLOT_COSTS, MAX_SLOTS, GROW_SEC, DEALER_RATE, PET_MAX,
-  rarityIdx, rarityWeights, animalValue, sizeLabel, petBuffValue, getPetKind, expectedMult, growMs, getHabitat, slotsOfHab,
+  rarityIdx, rarityWeights, animalValue, sizeLabel, petBuffValue, getPetKind, expectedMult, growMs, getHabitat, slotsOfHab, slotQty,
 } from './core/farm.js';
 import { UI, h, rp, toast, rarOf, CAT_EMOJI } from './ui.js';
 import { audio } from './audio.js';
@@ -84,7 +84,7 @@ P.openPlot = function openPlot(i) {
       const feed = slot.feed ? FEEDS.find((f) => f.id === slot.feed) : null;
       out.push(h('div', { class: `card${pr.ready ? ' hero' : ''}` },
         h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px' }, svgEl(animalSVG(it), 64, pr.ready ? 'bounce' : ''),
-          h('div', { class: 'grow' }, h('b', {}, it.name), h('div', { class: 'sub' }, feed ? `Pakan: ${feed.name}` : 'Tanpa pakan'),
+          h('div', { class: 'grow' }, h('b', {}, `${it.name}${slotQty(slot) > 1 ? ` ×${slotQty(slot)}` : ''}`), h('div', { class: 'sub' }, feed ? `Pakan: ${feed.name}` : 'Tanpa pakan'),
             h('div', { class: 'sub', 'data-t': i }, pr.ready ? 'SIAP PANEN!' : `Sisa ${mmss(pr.remainMs)}`))),
         h('div', { class: 'meter' }, h('i', { 'data-b': i, style: `width:${Math.round(pr.pct * 100)}%` }))));
       out.push(pr.ready
@@ -101,28 +101,39 @@ P.openPlot = function openPlot(i) {
     if (!sel.itemId || !list.some((x) => x.id === sel.itemId)) sel.itemId = list[0].id;
     const item = getItem(sel.itemId);
     const have = fm.bibit[sel.itemId] || 0;
-    const feedOk = !sel.feed || (fm.feeds[sel.feed] || 0) > 0;
+    const cap = H.cap;
+    const maxQty = Math.max(0, Math.min(cap, have, sel.feed ? (fm.feeds[sel.feed] || 0) : cap));
+    if (sel.qty === undefined || sel.qty > maxQty || sel.qty < 1) sel.qty = Math.max(1, maxQty);
+    const qty = sel.qty;
+    const feedOk = !sel.feed || (fm.feeds[sel.feed] || 0) >= 1;
     const feedLuck = (sel.feed ? FEEDS.find((f) => f.id === sel.feed).luck : 0) + e.farmBuffs().luck * 10;
-    out.push(h('div', { class: 'chips wrap' }, list.map((it) => h('button', { class: `chip${it.id === sel.itemId ? ' on' : ''}`, onClick: () => { sel.itemId = it.id; this.rerender(); } },
+    out.push(h('div', { class: 'chips wrap' }, list.map((it) => h('button', { class: `chip${it.id === sel.itemId ? ' on' : ''}`, onClick: () => { sel.itemId = it.id; sel.qty = undefined; this.rerender(); } },
       svgEl(animalSVG(it), 18), ' ', it.name.split(' ').slice(-1)[0], ` ×${fm.bibit[it.id] || 0}`))));
     out.push(h('div', { class: 'card' },
       h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px' }, svgEl(animalSVG(item), 52),
         h('div', { class: 'grow' }, h('b', {}, item.name), h('div', { class: 'sub' }, `Bibit punya ${have} · tumbuh ${mmss(growMs(e, sel.itemId, sel.feed))}`),
-          h('div', { class: 'sub' }, `Harga bibit ${rp(e.bibitPrice(sel.itemId))}`)))));
+          h('div', { class: 'sub' }, `Muat maksimal ${cap} sekaligus`))),
+      h('div', { class: 'row', style: 'justify-content:space-between' },
+        h('b', {}, 'Jumlah'),
+        h('div', { class: 'stepper' },
+          h('button', { disabled: qty <= 1, onClick: () => { sel.qty = Math.max(1, qty - 1); this.rerender(); } }, '−'),
+          h('b', { style: 'min-width:34px;text-align:center;font-size:18px' }, String(qty)),
+          h('button', { disabled: qty >= maxQty, onClick: () => { sel.qty = Math.min(maxQty, qty + 1); this.rerender(); } }, '+'),
+          h('button', { class: 'qbtn', disabled: qty >= maxQty, onClick: () => { sel.qty = maxQty; this.rerender(); } }, 'Maks')))));
     out.push(h('div', { class: 'card' },
-      h('b', {}, 'Pakan (opsional)'),
+      h('b', {}, 'Pakan (opsional, 1 per hewan)'),
       h('div', { class: 'chips wrap' },
-        h('button', { class: `chip${!sel.feed ? ' on' : ''}`, onClick: () => { sel.feed = null; this.rerender(); } }, 'Tanpa'),
-        FEEDS.map((f) => h('button', { class: `chip${sel.feed === f.id ? ' on' : ''}`, onClick: () => { sel.feed = f.id; this.rerender(); } },
+        h('button', { class: `chip${!sel.feed ? ' on' : ''}`, onClick: () => { sel.feed = null; sel.qty = undefined; this.rerender(); } }, 'Tanpa'),
+        FEEDS.map((f) => h('button', { class: `chip${sel.feed === f.id ? ' on' : ''}`, onClick: () => { sel.feed = f.id; sel.qty = undefined; this.rerender(); } },
           svgEl(feedSVG(f), 18), ` ${f.name.replace('Pakan ', '')} ×${fm.feeds[f.id] || 0}`))),
       h('div', { class: 'sub' }, `Nilai rata-rata ≈ ${expectedMult(feedLuck).toFixed(2)}× harga dasar`),
       oddsBar(feedLuck)));
     if (!have) {
-      out.push(h('button', { class: 'btn secondary', onClick: () => { this.closeModal(); this.ctx.travel('pasar', () => this.openPasar()); } }, `Bibit habis, ke Pasar`));
+      out.push(h('button', { class: 'btn secondary', onClick: () => { this.closeModal(); this.openPasar(); } }, 'Bibit habis, ke Pasar'));
     } else {
-      out.push(h('button', { class: 'btn', disabled: !feedOk,
-        onClick: () => { this.act(() => e.plant(i, sel.itemId, sel.feed), `Menanam ${item.name}`, 'ok'); this.ctx.scene()?.refreshFarm(); this.closeModal(); } },
-      feedOk ? `Tanam ${item.name}` : 'Pakan habis, beli di Pasar'));
+      out.push(h('button', { class: 'btn', disabled: !feedOk || maxQty < 1,
+        onClick: () => { this.act(() => e.plant(i, sel.itemId, sel.feed, qty), `Menanam ${qty} ${item.name}`, 'ok'); sel.qty = undefined; this.ctx.scene()?.refreshFarm(); this.closeModal(); } },
+      feedOk && maxQty >= 1 ? `Tanam ${qty} ${item.name}` : 'Pakan habis, beli di Pasar'));
     }
     return out;
   });
@@ -149,7 +160,7 @@ P.showReveal = function showReveal(a, extra = 0) {
     h('div', { class: 'rname', style: `color:${r.color}` }, r.name),
     h('h3', {}, it.name),
     h('div', { class: 'sub' }, `${sizeLabel(a.itemId, a.size)} · ≈ ${rp(animalValue(a))}`),
-    extra > 0 ? h('div', { class: 'sub' }, `+${extra} hewan lain masuk kandang`) : null);
+    extra > 0 ? h('div', { class: 'sub' }, `+${extra} hewan lain masuk stok`) : null);
   const ov = h('div', { class: 'reveal', onClick: () => ov.remove() }, card);
   document.body.append(ov);
   setTimeout(() => ov.remove(), big ? 2800 : 1800);
@@ -160,13 +171,13 @@ P.harvestUI = function harvestUI(i) {
   const at = sc?.plotCenter?.(i);
   let got = null;
   this.act(() => { got = this.e.harvest(i); return got; }, null, null);
-  if (!got) return;
-  const a = this.e.state.farm.animals.at(-1) || got;
+  if (!got || !got.length) return;
+  const a = got.slice().sort((x, y) => rarityIdx(y.rarity) - rarityIdx(x.rarity))[0];
   this.playHarvest(a);
   sc?.refreshFarm();
   if (at) sc.burst(at.x, at.y, rarityIdx(a.rarity) >= 3 ? 0xffd84d : 0xffffff, 14);
-  this.showReveal(a);
-  toast(this.harvestMsg(a), 'ok');
+  this.showReveal(a, got.length - 1);
+  toast(got.length > 1 ? `Panen ${got.length} hewan. Terbaik: ${this.harvestMsg(a)}` : this.harvestMsg(a), 'ok');
 };
 
 P.harvestAllUI = function harvestAllUI() {

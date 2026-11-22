@@ -143,11 +143,10 @@ export class UI {
     this.fEvent = h('button', { class: 'fchip', onClick: () => this.openEvent() });
     this.fStory = h('button', { class: 'fchip', onClick: () => this.openNpc() });
     this.fReady = h('button', { class: 'fchip ready', style: 'display:none', onClick: () => this.harvestAllUI() });
-    const zoom = h('div', { class: 'fzoom' },
-      h('button', { class: 'round big', 'aria-label': 'Perbesar', onClick: () => this.ctx.scene()?.zoomBy(1.25) }, '+'),
-      h('button', { class: 'round big', 'aria-label': 'Perkecil', onClick: () => this.ctx.scene()?.zoomBy(0.8) }, '−'),
-      h('button', { class: 'round big', 'aria-label': 'Lihat seluruh peta', onClick: () => this.ctx.scene()?.overview() }, svgEl(uiIconSVG('peta'), 24)));
-    fl.append(h('div', { class: 'fcol' }, this.fQuest, this.fEvent, this.fStory, this.fReady), zoom);
+    this.fNavL = h('button', { class: 'round big navl', 'aria-label': 'Ke Kolam', onClick: () => this.ctx.scene()?.travelTo('kolam') }, '◀');
+    this.fNavR = h('button', { class: 'round big navr', 'aria-label': 'Ke Kandang', onClick: () => this.ctx.scene()?.travelTo('kandang') }, '▶');
+    this.fNavLab = h('div', { class: 'navlab' }, 'Geser kiri/kanan');
+    fl.append(h('div', { class: 'fcol' }, this.fQuest, this.fEvent, this.fStory, this.fReady), this.fNavL, this.fNavR);
   }
 
   // ---------- Ambil hewan dari rak ----------
@@ -186,12 +185,12 @@ export class UI {
   // ---------- Tutorial ----------
   tutorialSteps() {
     return [
-      { mid: true, title: 'Selamat datang di Pasar Satwa!', text: 'Ini peta pasarmu. Geser dengan jari untuk melihat sekeliling, cubit untuk zoom, ketuk tanah agar karakter berjalan ke sana. Semua dilayani langsung olehmu, tidak ada yang otomatis.' },
+      { mid: true, title: 'Selamat datang di Pasar Satwa!', text: 'Ini kebunmu. Geser ke kiri-kanan untuk melihat Kolam dan Kandang. Ketuk lahan untuk langsung menanam atau panen. Semua dilayani langsung olehmu, tidak ada yang otomatis.' },
       { el: () => this.tabs.pasar, title: '1. Belanja di Pasar', text: 'Beli bibit atau anak hewan dan pakan. Pakan mahal membuat hewan lebih besar dan lebih mungkin langka.' },
-      { el: () => this.tabs.kolam, title: '2. Tanam di Kolam', text: 'Pergi ke Kolam & Kebun. Ketuk lahan kosong, pilih bibit dan pakan, lalu tunggu tumbuh. Saat tanda seru muncul, ketuk lahan itu untuk panen.' },
-      { el: () => this.tabs.pet, title: '3. Pet', text: 'Tetaskan telur untuk mendapat pet. Pet yang dipasang mengikutimu dan memberi buff.' },
+      { el: () => this.tabs.kebun, title: '2. Tanam di Kebun', text: 'Di layar Kebun, ketuk lahan kosong, pilih bibit, jumlah, dan pakan, lalu tunggu tumbuh. Satu lahan bisa diisi banyak sekaligus. Saat tanda seru muncul, ketuk lahan itu untuk panen.' },
+      { el: () => this.tabs.pet, title: '3. Pet', text: 'Tetaskan telur untuk mendapat pet. Pet yang dipasang menemanimu di toko dan memberi buff.' },
       { el: () => this.goBtn, title: '4. Buka toko dan layani', text: 'Pelanggan antre membawa pesanan di atas kepala. Ketuk rak untuk mengambil hewan yang tepat, lalu ketuk pelanggan untuk menyerahkan. Cepat melayani berarti tip.' },
-      { el: () => this.fStory, title: '5. Cerita dan misi', text: 'Ketuk Pak Pasar di alun-alun atau tombol ini untuk melanjutkan cerita. Misi harian memberi hadiah tambahan.' },
+      { el: () => this.fStory, title: '5. Cerita dan misi', text: 'Ketuk tombol ini atau Pak Pasar di Kebun untuk melanjutkan cerita. Misi harian memberi hadiah tambahan.' },
       { el: () => this.tabs.menu, title: '6. Menu', text: 'Koleksi, Skill, Upgrade, Karyawan, Bank, Laporan, dan Pengaturan ada di sini.' },
     ];
   }
@@ -253,6 +252,8 @@ export class UI {
 
   setHub(id) {
     for (const [k, b] of Object.entries(this.tabs)) b.classList.toggle('on', b.dataset.hub === id && k !== 'menu');
+    this.view = id;
+    if (this.fNavL) { const k = id === 'kebun' && this.e.state.phase !== 'open'; this.fNavL.style.display = k ? '' : 'none'; this.fNavR.style.display = k ? '' : 'none'; }
   }
 
   refreshHud(tick) {
@@ -288,7 +289,7 @@ export class UI {
     const readyN = s.farm.slots.filter((_, i) => e.slotProgress(i)?.ready).length;
     this.fReady.style.display = readyN ? '' : 'none';
     this.fReady.replaceChildren(svgEl(statIconSVG('harvest'), 20), h('span', {}, `${readyN}`));
-    this.tabs.kolam?.classList.toggle('badge-dot', readyN > 0);
+    this.tabs.kebun?.classList.toggle('badge-dot', readyN > 0);
     this.tabs.menu?.classList.toggle('badge-dot', claimable > 0 || (!sn.done && sn.ready));
     if (s.phase === 'open' && tick) {
       const t = tick.today;
@@ -305,12 +306,15 @@ export class UI {
   // ---------- Dock ----------
   buildDock() {
     const dock = document.getElementById('dock');
+    const lock = (fn) => () => {
+      if (this.e.state.phase === 'open') { toast('Toko sedang buka. Tutup toko dulu untuk pindah layar.', 'err'); return; }
+      fn();
+    };
     const defs = [
-      ['kolam', 'kolam', 'Kolam', 'kolam', () => this.ctx.travel('kolam')],
-      ['kandang', 'kandang', 'Kandang', 'kandang', () => this.ctx.travel('kandang')],
-      ['pasar', 'pasar', 'Pasar', 'pasar', () => this.ctx.travel('pasar', () => this.openPasar())],
-      ['toko', 'toko', 'Toko', 'toko', () => this.ctx.travel('toko')],
-      ['pet', 'pet', 'Pet', 'pet', () => this.ctx.travel('pet', () => this.openPet())],
+      ['pasar', 'pasar', 'Pasar', null, lock(() => this.openPasar())],
+      ['kebun', 'kolam', 'Kebun', 'kebun', lock(() => { this.closeModal(); this.ctx.travel('kolam'); })],
+      ['toko', 'toko', 'Toko', 'toko', () => { this.closeModal(); this.ctx.travel('toko'); }],
+      ['pet', 'pet', 'Pet', null, lock(() => this.openPet())],
       ['menu', 'menu', 'Menu', null, () => this.openMenu()],
     ];
     const tabs = h('div', { class: 'dock-tabs' });
@@ -341,6 +345,8 @@ export class UI {
     if (this.speed > this.e.maxSpeed()) this.speed = this.e.maxSpeed();
     this.goBtn.replaceChildren(svgEl(statIconSVG(open ? 'stop' : 'play'), 22), h('span', {}, open ? 'Tutup Toko' : `Buka Toko · Hari ${this.e.state.day}`));
     this.goBtn.classList.toggle('stop', open);
+    for (const k of ['pasar', 'kebun', 'pet']) this.tabs[k]?.classList.toggle('locked', open);
+    if (this.fNavL && this.view === 'kebun') { this.fNavL.style.display = open ? 'none' : ''; this.fNavR.style.display = open ? 'none' : ''; }
     this.speedBtn.textContent = this.speed === 0 ? 'Jeda' : `${this.speed}x`;
   }
 
@@ -351,7 +357,8 @@ export class UI {
       toast('Toko ditutup. Pelanggan yang tersisa diselesaikan dulu.');
     } else {
       if (this.e.state.farm.animals.length === 0) {
-        if (!confirm('Belum ada hewan untuk dijual. Pelanggan akan pulang kecewa. Tetap buka toko?')) return;
+        toast('Stok masih kosong. Panen dulu di Kebun atau beli di Pasar sebelum buka toko.', 'err');
+        return;
       }
       this.closeModal();
       this.speed = this.speed === 0 ? 1 : this.speed;

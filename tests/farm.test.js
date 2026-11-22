@@ -9,6 +9,37 @@ import { makeClock, farmRound, serveDay } from './farmbot.js';
 const mk = (seed = 1) => { const e = new GameEngine(newState(seed)); const clock = makeClock(e); return { e, clock }; };
 
 describe('peternakan', () => {
+  it('satu lahan bisa ditanami banyak sekaligus dan panen sekaligus', () => {
+    const { e, clock } = mk();
+    e.buyBibit('lele', 5);
+    e.buyFeed('bagus', 5);
+    expect(() => e.plant(1, 'lele', null, 9)).toThrow();
+    expect(() => e.plant(1, 'lele', 'bagus', 6)).toThrow();
+    e.plant(1, 'lele', 'bagus', 5);
+    expect(e.state.farm.bibit.lele).toBeUndefined();
+    expect(e.state.farm.feeds.bagus).toBeUndefined();
+    clock.t += 120_000;
+    const got = e.harvest(1);
+    expect(got).toHaveLength(5);
+    expect(e.animalCount('lele')).toBe(5);
+    expect(new Set(got.map((a) => a.id)).size).toBe(5);
+    expect(validateState(deserialize(serialize(e.state)))).toEqual([]);
+  });
+
+  it('hewan langka dibayar sesuai nilainya, bukan terpotong harga dasar', () => {
+    const { e } = mk();
+    const a = { id: 'z1', itemId: 'lele', rarity: 'legendary', size: 1, cost: 100 };
+    e.state.farm.animals.push(a);
+    const plan = e.startDay();
+    const cust = plan[0];
+    cust.wants = [{ itemId: 'lele', qty: 1, noise: 1 }];
+    const val = animalValue(a);
+    const r = e.serveAnimal(cust, 0, 'z1');
+    expect(r.ok).toBe(true);
+    expect(r.unitPrice).toBeGreaterThan(val * 0.8);
+    expect(r.unitPrice).toBeGreaterThan(5000);
+  });
+
   it('bibit tumbuh sesuai waktu, panen terlalu cepat ditolak', () => {
     const { e, clock } = mk();
     e.buyBibit('cacing', 1);
@@ -17,7 +48,7 @@ describe('peternakan', () => {
     expect(e.slotProgress(0).ready).toBe(false);
     clock.t += 46_000;
     expect(e.slotProgress(0).ready).toBe(true);
-    const a = e.harvest(0);
+    const [a] = e.harvest(0);
     expect(a.itemId).toBe('cacing');
     expect(e.animalCount('cacing')).toBe(1);
     expect(e.state.farm.slots[0]).toBeNull();
@@ -56,7 +87,7 @@ describe('peternakan', () => {
   });
 
   it('hasil panen deterministik untuk benih yang sama', () => {
-    const run = () => { const { e, clock } = mk(5); const out = []; for (let i = 0; i < 6; i++) { e.buyBibit('cacing', 1); e.plant(0, 'cacing', null); clock.t += 60_000; out.push(e.harvest(0)); } return out; };
+    const run = () => { const { e, clock } = mk(5); const out = []; for (let i = 0; i < 6; i++) { e.buyBibit('cacing', 1); e.plant(0, 'cacing', null); clock.t += 60_000; out.push(...e.harvest(0)); } return out; };
     expect(run()).toEqual(run());
   });
 
@@ -115,7 +146,7 @@ describe('penjualan hewan', () => {
     expect(auditLedger(e.state.ledger)).toEqual([]);
   });
 
-  it('pelanggan biasa membatasi harga rarity tinggi, kolektor membayar penuh', () => {
+  it('pelanggan biasa membayar sekitar nilai hewan, batas atas 1.25x, kolektor boleh lebih', () => {
     const { e } = mk();
     e.state.farm.animals.push({ id: 1, itemId: 'cacing', rarity: 'legendary', size: 1, cost: 100 }, { id: 2, itemId: 'cacing', rarity: 'legendary', size: 1, cost: 100 });
     e.startDay();
@@ -123,8 +154,10 @@ describe('penjualan hewan', () => {
     const kol = { id: 'k', type: 'kolektor', wants: [{ itemId: 'cacing', qty: 1, noise: 1 }] };
     const rb = e.serveAnimal(biasa, 0, 1);
     const rk = e.serveAnimal(kol, 0, 2);
-    expect(rb.total).toBeLessThanOrEqual(550 * 2);
-    expect(rk.total).toBeGreaterThan(rb.total * 3);
+    const val = animalValue({ itemId: 'cacing', rarity: 'legendary', size: 1 });
+    expect(rb.total).toBeGreaterThanOrEqual(Math.round(val * 0.9));
+    expect(rb.total).toBeLessThanOrEqual(Math.round(val * 1.25));
+    expect(rk.total).toBeGreaterThanOrEqual(rb.total);
   });
 
   it('permintaan rarity minimum menolak hewan common', () => {

@@ -23,6 +23,12 @@ export const HUBS = {
   plaza: { name: 'Alun-alun', x: 700, y: 330, spot: { x: 700, y: 450 } },
 };
 
+// Layar: Kebun (kolam + kandang, digeser kiri-kanan) dan Toko (terkunci saat buka).
+export const VIEWS = {
+  kebun: { x: 0, y: 0, w: 1400, h: 530, fit: 'h' },
+  toko: { x: 405, y: 450, w: 590, h: 550, fit: 'w' },
+};
+
 const PLOTS = {
   kolam: [[130, 150], [320, 150], [130, 300], [320, 300]],
   kebun: [[480, 160], [480, 275]],
@@ -118,13 +124,12 @@ export class WorldScene extends Phaser.Scene {
 
   create() {
     this.cameras.main.setBackgroundColor('#8fd36f');
-    this.cameras.main.setBounds(0, 0, WORLD.w, WORLD.h);
     this._buildGround();
     this._buildHubs();
 
-    this.player = this.add.image(HUBS.plaza.spot.x, HUBS.plaza.spot.y, 'player').setOrigin(0.5, 1).setScale(0.5 * 1.2);
+    this.player = this.add.image(HUBS.toko.spot.x, HUBS.toko.spot.y, 'player').setOrigin(0.5, 1).setScale(0.5 * 1.2);
     this.player.setDisplaySize(44, 68);
-    this.playerY = HUBS.plaza.spot.y;
+    this.playerY = HUBS.toko.spot.y;
     this.playerBob = 0;
 
     this.tint = this.add.rectangle(0, 0, 4000, 4000, 0xff8a3d, 0).setOrigin(0).setScrollFactor(0).setDepth(20000);
@@ -132,10 +137,8 @@ export class WorldScene extends Phaser.Scene {
     this.rain = Array.from({ length: 60 }, () => ({ x: Math.random(), y: Math.random(), s: 0.6 + Math.random() * 0.8 }));
 
     this._setupInput();
-    this.scale.on('resize', () => this._fitCamera());
-    this._fitCamera();
-    const start = HUBS.plaza;
-    this.cameras.main.centerOn(start.x, start.y);
+    this.scale.on('resize', () => { const c = this.cameras.main; const cx = c.scrollX + c.width / 2 / c.zoom; const cy = c.scrollY + c.height / 2 / c.zoom; this._fitCamera(); c.centerOn(cx, cy); });
+    this.setView('kebun', HUBS.kolam.x);
     this.refreshShelves();
     this.hooks.onReady?.(this);
   }
@@ -143,103 +146,87 @@ export class WorldScene extends Phaser.Scene {
   // ---------- Kamera dan input ----------
   _fitCamera() {
     const cam = this.cameras.main;
-    const w = this.scale.width;
-    this.baseZoom = w / BASE_VIEW_W;
-    const minUz = Math.max(0.2, Math.max(this.scale.width / WORLD.w, this.scale.height / WORLD.h) / this.baseZoom);
-    this.minUz = minUz;
-    this.uz = Phaser.Math.Clamp(this.uz, minUz, 2.2);
-    cam.setZoom(this.baseZoom * this.uz);
+    const v = VIEWS[this.view || 'kebun'];
+    const z = v.fit === 'h' ? this.scale.height / v.h : this.scale.width / v.w;
+    this.baseZoom = z;
+    this.uz = 1;
+    cam.setBounds(v.x, v.y, v.w, v.h);
+    cam.setZoom(z);
     this.tint.setSize(this.scale.width, this.scale.height);
   }
 
-  _setZoom(uz) {
+  setView(id, focusX = null) {
+    const first = !this.view;
+    if (!VIEWS[id]) return;
+    this.view = id;
+    this.camGoal = null;
+    this._fitCamera();
     const cam = this.cameras.main;
-    const cx = cam.scrollX + cam.width / 2 / cam.zoom;
-    const cy = cam.scrollY + cam.height / 2 / cam.zoom;
-    this.uz = Phaser.Math.Clamp(uz, this.minUz, 2.2);
-    cam.setZoom(this.baseZoom * this.uz);
-    cam.centerOn(cx, cy);
+    const v = VIEWS[id];
+    if (id === 'kebun') cam.centerOn(focusX ?? this._kebunX ?? HUBS.kolam.x, v.y + v.h / 2);
+    else cam.centerOn(v.x + v.w / 2, v.y + v.h / 2);
+    this.player?.setVisible(id === 'toko');
+    for (const s of this.petSprites || []) { s.img.setVisible(id === 'toko'); s.ring.setVisible(id === 'toko'); }
+    this.carryIcon?.setVisible(id === 'toko');
+    this.carryRing?.setVisible(id === 'toko');
+    this.hooks.onHub?.(id);
+    return first;
   }
 
   _setupInput() {
-    this.input.addPointer(1);
     this.drag = null;
+    const reset = () => { this.drag = null; };
     this.input.on('pointerdown', (p) => {
-      this.drag = { x: p.x, y: p.y, moved: false, id: p.id };
+      this.drag = { x: p.x, y: p.y, lx: p.x, ly: p.y, moved: false, id: p.id };
     });
     this.input.on('pointermove', (p) => {
-      const p1 = this.input.pointer1;
-      const p2 = this.input.pointer2;
-      if (p1.isDown && p2.isDown) {
-        const d = Phaser.Math.Distance.Between(p1.x, p1.y, p2.x, p2.y);
-        if (this.pinch) this._setZoom(this.uz * (d / this.pinch));
-        this.pinch = d;
-        if (this.drag) this.drag.moved = true;
-        return;
-      }
-      this.pinch = 0;
-      if (!this.drag || !p.isDown) return;
-      const dx = p.x - this.drag.x;
-      const dy = p.y - this.drag.y;
-      if (!this.drag.moved && Math.hypot(dx, dy) < 9) return;
-      this.drag.moved = true;
+      const d = this.drag;
+      if (!d || !p.isDown || p.id !== d.id) return;
+      if (!d.moved && Math.hypot(p.x - d.x, p.y - d.y) < 9) return;
+      d.moved = true;
       this.camGoal = null;
-      this.follow = false;
+      if (this.view !== 'kebun') return;
       const cam = this.cameras.main;
-      cam.scrollX -= (p.x - (this.drag.lx ?? this.drag.x)) / cam.zoom;
-      cam.scrollY -= (p.y - (this.drag.ly ?? this.drag.y)) / cam.zoom;
-      this.drag.lx = p.x;
-      this.drag.ly = p.y;
+      cam.scrollX -= (p.x - d.lx) / cam.zoom;
+      d.lx = p.x;
+      d.ly = p.y;
+      this._kebunX = cam.scrollX + cam.width / 2 / cam.zoom;
     });
     this.input.on('pointerup', (p) => {
       const d = this.drag;
       this.drag = null;
-      this.pinch = 0;
       if (!d || d.moved) return;
-      const cam = this.cameras.main;
-      const wp = cam.getWorldPoint(p.x, p.y);
+      const wp = this.cameras.main.getWorldPoint(p.x, p.y);
       this._onTap(wp.x, wp.y);
     });
-    this.input.on('wheel', (_p, _o, _dx, dy) => this._setZoom(this.uz * (dy > 0 ? 0.9 : 1.1)));
+    this.input.on('pointerupoutside', reset);
+    this.input.on('gameout', reset);
+    this.game.events.on('blur', reset);
+    this.input.on('pointerdown', () => { this.camGoal = null; });
   }
 
-  zoomBy(f) { this._setZoom(this.uz * f); }
-  overview() {
-    this.camGoal = null;
-    this.uz = this.minUz;
-    this.cameras.main.setZoom(this.baseZoom * this.uz);
-    this.cameras.main.centerOn(WORLD.w / 2, WORLD.h / 2);
-  }
+  zoomBy() {}
+  overview() {}
 
   focusHub(id, instant = false) {
     const h = HUBS[id];
     if (!h) return;
-    this._setZoom(h.zoom || 1);
     const cam = this.cameras.main;
-    if (instant) cam.centerOn(h.x, h.y);
-    else this.camGoal = { x: h.x, y: h.y };
+    if (instant) { cam.centerOn(h.x, VIEWS.kebun.y + VIEWS.kebun.h / 2); this._kebunX = h.x; } else this.camGoal = { x: h.x, y: VIEWS.kebun.y + VIEWS.kebun.h / 2 };
+    this._kebunX = h.x;
   }
 
-  // Berjalan ke hub, kamera ikut berpindah.
+  // Pindah layar. 'kolam'/'kandang' = layar Kebun digeser ke bagian itu; 'toko' = layar Toko.
   travelTo(id, then) {
-    const h = HUBS[id];
-    if (!h) return;
-    this.focusHub(id);
-    this._goTo(h.spot.x, h.spot.y, then);
+    if (id === 'toko') this.setView('toko');
+    else if (id === 'kolam' || id === 'kandang') {
+      if (this.view !== 'kebun') this.setView('kebun', HUBS[id].x);
+      else this.focusHub(id);
+    }
+    then?.();
   }
 
-  currentHub() {
-    const cam = this.cameras.main;
-    const cx = cam.scrollX + cam.width / 2 / cam.zoom;
-    const cy = cam.scrollY + cam.height / 2 / cam.zoom;
-    let best = 'plaza';
-    let bd = 1e9;
-    for (const [id, h] of Object.entries(HUBS)) {
-      const d = Math.hypot(h.x - cx, h.y - cy);
-      if (d < bd) { bd = d; best = id; }
-    }
-    return best;
-  }
+  currentHub() { return this.view || 'kebun'; }
 
   // ---------- Dunia statis ----------
   _buildGround() {
@@ -355,7 +342,7 @@ export class WorldScene extends Phaser.Scene {
     const e = this.engine;
     const fm = e.state.farm;
     // pertahankan sprite bila struktur tidak berubah
-    const sig = fm.habs.join(',') + '|' + fm.slots.map((s) => (s ? s.itemId : '-')).join(',') + '|' + e.state.ledger.balance / 1e12;
+    const sig = fm.habs.join(',') + '|' + fm.slots.map((s) => (s ? `${s.itemId}x${s.qty || 1}` : '-')).join(',') + '|' + e.state.ledger.balance / 1e12;
     if (sig === this._plotSig && this.plots.length) return;
     this._plotSig = sig;
     this._clearPlots();
@@ -381,11 +368,14 @@ export class WorldScene extends Phaser.Scene {
           plot.objs.push(base);
           const s = fm.slots[plot.slot];
           if (s) {
-            const occ = this.add.image(x, y, `icon_${s.itemId}`).setDepth(y + 2);
-            plot.occ = occ;
+            const n = Math.min(s.qty || 1, 8);
+            plot.occs = Array.from({ length: n }, () => this.add.image(x, y, `icon_${s.itemId}`).setDepth(y + 2));
+            plot.occ = plot.occs[0];
+            plot.n = n;
             plot.bar = this.add.graphics().setDepth(y + 30);
             plot.mark = this.add.image(x + w / 2 - 14, y - h / 2 + 6, 'exclaim').setDisplaySize(22, 28).setDepth(y + 40).setVisible(false);
-            plot.objs.push(occ, plot.bar, plot.mark);
+            plot.objs.push(...plot.occs, plot.bar, plot.mark);
+            if ((s.qty || 1) > 1) plot.objs.push(T(this, x - w / 2 + 16, y - h / 2 + 10, `×${s.qty}`, 12, '#ffffff', { stroke: '#3b2a1c', strokeThickness: 3 }).setDepth(y + 35));
           } else {
             const t = T(this, x, y + h / 2 - 8, 'kosong', 11, '#3b2a1c').setDepth(y + 4).setAlpha(0.55);
             plot.objs.push(t);
@@ -400,26 +390,29 @@ export class WorldScene extends Phaser.Scene {
   _updatePlots(time, force = false) {
     const e = this.engine;
     for (const p of this.plots) {
-      if (p.slot === null || !p.occ) continue;
+      if (p.slot === null || !p.occs) continue;
       const pr = e.slotProgress(p.slot);
       if (!pr) continue;
       const slot = e.state.farm.slots[p.slot];
       const grow = 0.34 + 0.66 * pr.pct;
-      const size = 40 * grow;
-      p.occ.setDisplaySize(size, size);
-      const t = time / 1000 + p.k * 1.7;
-      if (p.hab === 'kolam') {
-        p.occ.setPosition(p.x + Math.sin(t * 0.8) * (p.w * 0.28), p.y + 2 + Math.sin(t * 1.3) * 7);
-        p.occ.setFlipX(Math.cos(t * 0.8) < 0);
-        p.occ.setAngle(Math.sin(t * 3) * 5);
-      } else if (p.hab === 'kandang') {
-        p.occ.setPosition(p.x + Math.sin(t * 0.6) * 20, p.y + 22 - Math.abs(Math.sin(t * 2.2)) * (pr.ready ? 12 : 5));
-        p.occ.setFlipX(Math.cos(t * 0.6) < 0);
-      } else {
-        p.occ.setPosition(p.x + Math.sin(t * 0.7) * 22, p.y + 4 + Math.sin(t * 2) * 2);
-        p.occ.setFlipX(Math.cos(t * 0.7) < 0);
-      }
-      if (pr.ready) p.occ.setScale(p.occ.scaleX * (1 + Math.sin(time / 180) * 0.06), p.occ.scaleY * (1 + Math.sin(time / 180) * 0.06));
+      const many = p.occs.length;
+      const size = (many > 3 ? 28 : many > 1 ? 34 : 40) * grow;
+      p.occs.forEach((occ, idx) => {
+        occ.setDisplaySize(size, size);
+        const t = time / 1000 + p.k * 1.7 + idx * 2.3;
+        if (p.hab === 'kolam') {
+          occ.setPosition(p.x + Math.sin(t * 0.8) * (p.w * 0.3), p.y + 2 + Math.sin(t * 1.3) * (many > 1 ? 12 : 7));
+          occ.setFlipX(Math.cos(t * 0.8) < 0);
+          occ.setAngle(Math.sin(t * 3) * 5);
+        } else if (p.hab === 'kandang') {
+          occ.setPosition(p.x + Math.sin(t * 0.6) * (many > 1 ? 30 : 20), p.y + 22 - Math.abs(Math.sin(t * 2.2)) * (pr.ready ? 12 : 5));
+          occ.setFlipX(Math.cos(t * 0.6) < 0);
+        } else {
+          occ.setPosition(p.x + Math.sin(t * 0.7) * (many > 1 ? 30 : 22), p.y + 4 + Math.sin(t * 2 + idx) * (many > 1 ? 10 : 2));
+          occ.setFlipX(Math.cos(t * 0.7) < 0);
+        }
+        if (pr.ready) occ.setScale(occ.scaleX * (1 + Math.sin(time / 180 + idx) * 0.06), occ.scaleY * (1 + Math.sin(time / 180 + idx) * 0.06));
+      });
       p.mark.setVisible(pr.ready);
       if (pr.ready) p.mark.y = p.y - p.h / 2 + 6 + Math.sin(time / 160) * 3;
       // bilah kemajuan (diperbarui seperempat detik sekali)
@@ -513,6 +506,7 @@ export class WorldScene extends Phaser.Scene {
       const col = Phaser.Display.Color.HexStringToColor(RARITIES.find((r) => r.id === p.rarity).color).color;
       const ring = this.add.ellipse(this.player.x, this.playerY, 30, 10, col, 0.55).setStrokeStyle(2, col).setDepth(1);
       const img = this.add.image(this.player.x - 30 * (i + 1), this.playerY, `pet_${p.kind}`).setOrigin(0.5, 1).setDisplaySize(34, 34);
+      img.setVisible(this.view === 'toko'); ring.setVisible(this.view === 'toko');
       this.petSprites.push({ img, ring, i, id });
     });
   }
@@ -550,6 +544,7 @@ export class WorldScene extends Phaser.Scene {
       const col = Phaser.Display.Color.HexStringToColor(RARITIES.find((r) => r.id === animal.rarity).color).color;
       this.carryRing = this.add.circle(this.player.x, this.playerY - 78, 18, col, 0.6).setStrokeStyle(3, col).setDepth(19000);
       this.carryIcon = this.add.image(this.player.x, this.playerY - 78, `icon_${animal.itemId}`).setDisplaySize(30, 30).setDepth(19001);
+      this.carryRing.setVisible(this.view === 'toko'); this.carryIcon.setVisible(this.view === 'toko');
     }
   }
 
@@ -569,11 +564,7 @@ export class WorldScene extends Phaser.Scene {
     this._updateWeather(time);
     for (const sp of Object.values(this.staffSprites)) sp.y = sp.baseY + Math.sin(time / 500 + sp.baseY) * 1.4;
     this._acc += dt;
-    if (this._acc > 0.5) {
-      this._acc = 0;
-      const hub = this.currentHub();
-      if (hub !== this._lastHub) { this._lastHub = hub; this.hooks.onHub?.(hub); }
-    }
+    if (this._acc > 0.5) this._acc = 0;
     if (!this.dayActive || this.paused) return;
 
     const sdt = Math.min(dt, 0.1) * this.speed;
@@ -623,10 +614,8 @@ export class WorldScene extends Phaser.Scene {
   }
 
   // ---------- Pemain ----------
-  _goTo(x, y, then) {
-    this.playerTarget = { x: Phaser.Math.Clamp(x, 20, WORLD.w - 20), y: Phaser.Math.Clamp(y, 60, WORLD.h - 10), then };
-    this.follow = false;
-  }
+  // Karakter diam di toko: ketukan langsung bekerja tanpa berjalan.
+  _goTo(x, y, then) { then?.(); }
 
   _movePlayer(time, dt) {
     const t = this.playerTarget;
@@ -744,6 +733,16 @@ export class WorldScene extends Phaser.Scene {
   _beginOrder(c) {
     c.state = 'waiting';
     c.patience = c.maxPatience = Math.round(45 * (1 + this.engine.farmBuffs().patience));
+    // Utamakan hewan yang memang ada di stok. Kalau stok barangnya kosong, pelanggan cepat pulang tanpa menghukum reputasi.
+    const want = c.data.wants[c.wantIdx];
+    const stock = this.engine.state.farm.animals;
+    if (!stock.some((a) => a.itemId === want.itemId) && stock.length && Math.random() < 0.8) {
+      const unlocked = new Set(this.engine.unlockedItems().map((i) => i.id));
+      const pool = [...new Set(stock.map((a) => a.itemId))].filter((id) => unlocked.has(id));
+      if (pool.length) want.itemId = pool[Math.floor(Math.random() * pool.length)];
+    }
+    c.lackStock = !stock.some((a) => a.itemId === want.itemId);
+    if (c.lackStock) c.patience = c.maxPatience = Math.min(c.maxPatience, 12);
     c.order = this.engine.orderInfo(c.data, c.wantIdx);
     this._clearBubble(c);
     c.bubble = this._makeBubble(c);
@@ -793,7 +792,8 @@ export class WorldScene extends Phaser.Scene {
   }
 
   _orderFail(c, reason) {
-    this._popup(c.x, c.y - 100, { habis: 'Habis...', sabar: 'Lama sekali!' }[reason] || '...', '#ffd0d0');
+    if (!c.lackStock) c.slow = true;
+    this._popup(c.x, c.y - 100, c.lackStock ? 'Stoknya kosong' : { habis: 'Habis...', sabar: 'Lama sekali!' }[reason] || '...', '#ffd0d0');
     this._clearBubble(c);
     c.state = 'failing';
     c.timer = 0.9;
@@ -842,7 +842,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   _leave(c, satisfied) {
-    this.engine.customerLeft(c.data.id, satisfied);
+    this.engine.customerLeft(c.data.id, satisfied, !satisfied && !c.slow);
     c.wp = [];
     if (c.y < ROAD_Y - 10) c.wp.push({ x: c.x, y: ROAD_Y });
     c.wp.push({ x: ENTRY_X - 40, y: ROAD_Y });

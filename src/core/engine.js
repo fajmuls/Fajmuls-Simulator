@@ -228,7 +228,7 @@ export class GameEngine {
   storyNow() { return story.storyNow(this); }
   claimStory() { return story.claimStory(this); }
   markStoryIntro() { story.markIntro(this); }
-  plant(slot, itemId, feedId) { return farm.plant(this, slot, itemId, feedId); }
+  plant(slot, itemId, feedId, qty = 1) { return farm.plant(this, slot, itemId, feedId, qty); }
   slotProgress(slot) { return farm.slotProgress(this, slot); }
   harvest(slot) { return farm.harvest(this, slot); }
   harvestAll() { return farm.harvestAll(this); }
@@ -1049,7 +1049,7 @@ export class GameEngine {
     const m = this.mods();
     const item = getItem(a.itemId);
     const raw = farm.animalValue(a) * want.noise * (1 + m.wtp + this.farmBuffs().value) * (1 + (customer.bonusWtp || 0));
-    const cap = item.retail * (farm.PAY_CAP[type.id] ?? 2) * (customer.regularId ? 1.5 : 1);
+    const cap = farm.animalValue(a) * (farm.PAY_CAP[type.id] ?? 1.25) * (customer.regularId ? 1.2 : 1);
     const price = Math.max(1, Math.round(Math.min(raw, cap)));
     fm.animals.splice(idx, 1);
     const list = this.reserved.get(customer.id) || [];
@@ -1058,8 +1058,10 @@ export class GameEngine {
     return { ok: true, itemId: a.itemId, quality: level, qty: 1, unitPrice: price, total: price, animal: a, capped: raw > cap };
   }
 
-  customerLeft(customerId, satisfied) {
+  // noStock: pelanggan pergi karena pemain memang tidak punya barangnya. Tidak menghukum reputasi.
+  customerLeft(customerId, satisfied, noStock = false) {
     if (satisfied) this.today.served += 1;
+    else if (noStock) this.today.skipped = (this.today.skipped || 0) + 1;
     else this.today.lost += 1;
   }
 

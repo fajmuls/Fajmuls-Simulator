@@ -108,7 +108,7 @@ export function validateState(s) {
   else {
     for (const a of f.animals) if (!a || !isInt(a.id) || typeof a.itemId !== 'string' || typeof a.rarity !== 'string' || !(a.size > 0) || !nonNeg(a.cost)) { p.push('Hewan rusak'); break; }
     if (!Array.isArray(f.habs) || f.habs.length !== f.slots.length || f.habs.some((x) => typeof x !== 'string')) p.push('Habitat rusak');
-    for (const sl of f.slots) if (sl && (typeof sl.itemId !== 'string' || !nonNeg(sl.plantedAt) || !nonNeg(sl.readyAt))) { p.push('Kolam rusak'); break; }
+    for (const sl of f.slots) if (sl && (typeof sl.itemId !== 'string' || !nonNeg(sl.plantedAt) || !nonNeg(sl.readyAt) || (sl.qty !== undefined && (!Number.isInteger(sl.qty) || sl.qty < 1 || sl.qty > 12)))) { p.push('Kolam rusak'); break; }
   }
   if (!s.story || !nonNeg(s.story.ch) || typeof s.story.done !== 'boolean') p.push('Cerita rusak');
   const pt = s.pets;

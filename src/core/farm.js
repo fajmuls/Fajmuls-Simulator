@@ -39,9 +39,9 @@ export const START_SLOTS = 3;
 
 // Habitat: tiap lahan (slot) berada di satu tempat di peta dan hanya cocok untuk kategori tertentu.
 export const HABITATS = [
-  { id: 'kolam', name: 'Kolam Ikan', one: 'Kolam', cats: ['ikan'], max: 4 },
-  { id: 'kebun', name: 'Kebun Umpan', one: 'Petak', cats: ['perlengkapan'], max: 2 },
-  { id: 'kandang', name: 'Kandang Satwa', one: 'Kandang', cats: ['burung', 'reptil', 'kecil'], max: 5 },
+  { id: 'kolam', name: 'Kolam Ikan', one: 'Kolam', cats: ['ikan'], max: 4, cap: 8 },
+  { id: 'kebun', name: 'Kebun Umpan', one: 'Petak', cats: ['perlengkapan'], max: 2, cap: 8 },
+  { id: 'kandang', name: 'Kandang Satwa', one: 'Kandang', cats: ['burung', 'reptil', 'kecil'], max: 5, cap: 5 },
 ];
 export const START_HABS = ['kebun', 'kolam', 'kolam'];
 export const getHabitat = (id) => HABITATS.find((h) => h.id === id);
@@ -184,32 +184,37 @@ export function buySlot(e, hab = null) {
   return cost;
 }
 
-export function plant(e, slot, itemId, feedId = null) {
+export const slotQty = (s) => (s && s.qty) || 1;
+export const slotCap = (e, slot) => getHabitat(farmOf(e).habs[slot]).cap;
+
+export function plant(e, slot, itemId, feedId = null, qty = 1) {
   const fm = farmOf(e);
   if (!Number.isInteger(slot) || slot < 0 || slot >= fm.slots.length) throw new Error('Kolam tidak valid');
   if (fm.slots[slot]) throw new Error('Kolam masih terisi');
   getItem(itemId);
   if (!e.isUnlocked(itemId)) throw new Error('Spesies belum terbuka');
   if (habitatOf(itemId).id !== fm.habs[slot]) throw new Error(`${getItem(itemId).name} tidak cocok di ${getHabitat(fm.habs[slot]).name}`);
+  if (!Number.isInteger(qty) || qty < 1) throw new Error('Jumlah tidak valid');
+  if (qty > slotCap(e, slot)) throw new Error(`Muat maksimal ${slotCap(e, slot)} sekaligus`);
   if (feedId) {
     getFeed(feedId);
-    if ((fm.feeds[feedId] || 0) < 1) throw new Error('Pakan habis, beli di Pasar');
+    if ((fm.feeds[feedId] || 0) < qty) throw new Error('Pakan kurang, beli di Pasar');
   }
-  if ((fm.bibit[itemId] || 0) < 1) throw new Error('Bibit habis, beli di Pasar');
+  if ((fm.bibit[itemId] || 0) < qty) throw new Error('Bibit kurang, beli di Pasar');
   const price = bibitPrice(e, itemId);
-  fm.bibit[itemId] -= 1;
+  fm.bibit[itemId] -= qty;
   if (fm.bibit[itemId] === 0) delete fm.bibit[itemId];
   if (feedId) {
-    fm.feeds[feedId] -= 1;
+    fm.feeds[feedId] -= qty;
     if (fm.feeds[feedId] === 0) delete fm.feeds[feedId];
   }
   const now = e.now();
   fm.slots[slot] = {
-    itemId, feed: feedId, plantedAt: now, readyAt: now + growMs(e, itemId, feedId),
+    itemId, feed: feedId, plantedAt: now, readyAt: now + growMs(e, itemId, feedId), qty,
     cost: price + (feedId ? getFeed(feedId).price : 0),
   };
-  e.state.stats.planted = (e.state.stats.planted || 0) + 1;
-  e.track('plant', 1);
+  e.state.stats.planted = (e.state.stats.planted || 0) + qty;
+  e.track('plant', qty);
   return fm.slots[slot];
 }
 
@@ -226,30 +231,35 @@ export function harvest(e, slot) {
   const s = fm.slots[slot];
   if (!s) throw new Error('Kolam kosong');
   if (e.now() < s.readyAt) throw new Error('Belum waktunya panen');
-  const rng = mulberry32(hashSeed(e.state.seed, 'harvest', fm.rolls));
-  fm.rolls += 1;
   const feed = s.feed ? getFeed(s.feed) : null;
   const luck = (feed ? feed.luck : 0) + farmBuffs(e).luck * 10 + (e.eventOf().luck || 0);
-  const r = rollRarity(rng, luck);
-  const size = rollSize(rng, feed ? feed.size : 0);
-  const animal = { id: fm.nextAnimal++, itemId: s.itemId, rarity: RARITIES[r].id, size, cost: s.cost };
-  fm.animals.push(animal);
+  const out = [];
+  const n = slotQty(s);
+  for (let k = 0; k < n; k++) {
+    const rng = mulberry32(hashSeed(e.state.seed, 'harvest', fm.rolls));
+    fm.rolls += 1;
+    const r = rollRarity(rng, luck);
+    const size = rollSize(rng, feed ? feed.size : 0);
+    const animal = { id: fm.nextAnimal++, itemId: s.itemId, rarity: RARITIES[r].id, size, cost: Math.round(s.cost) };
+    fm.animals.push(animal);
+    out.push(animal);
+    const book = (fm.book[s.itemId] ||= {});
+    const rec = book[animal.rarity] || { n: 0, best: 0 };
+    rec.n += 1;
+    rec.best = Math.max(rec.best, size);
+    book[animal.rarity] = rec;
+    e.state.stats.bred += 1;
+    e.state.stats.bestRar = Math.max(e.state.stats.bestRar || 0, r);
+  }
   fm.slots[slot] = null;
-  const book = (fm.book[s.itemId] ||= {});
-  const rec = book[animal.rarity] || { n: 0, best: 0 };
-  rec.n += 1;
-  rec.best = Math.max(rec.best, size);
-  book[animal.rarity] = rec;
-  e.state.stats.bred += 1;
-  e.state.stats.bestRar = Math.max(e.state.stats.bestRar || 0, r);
-  e.track('harvest', 1);
-  return animal;
+  e.track('harvest', n);
+  return out;
 }
 
 export function harvestAll(e) {
   const out = [];
   fmSlots(e).forEach((s, i) => {
-    if (s && e.now() >= s.readyAt) out.push(harvest(e, i));
+    if (s && e.now() >= s.readyAt) out.push(...harvest(e, i));
   });
   return out;
 }
@@ -257,8 +267,8 @@ const fmSlots = (e) => farmOf(e).slots;
 
 export const animalCount = (e, itemId) => farmOf(e).animals.filter((a) => a.itemId === itemId).length;
 
-// Pelanggan: batas harga tiap tipe (kelipatan harga dasar). Kolektor membayar penuh.
-export const PAY_CAP = { biasa: 2, pelit: 1.3, vip: 4, kolektor: 1e9 };
+// Pelanggan: batas harga tiap tipe, kelipatan NILAI hewan itu (sudah termasuk rarity dan ukuran).
+export const PAY_CAP = { biasa: 1.25, pelit: 1.1, vip: 1.6, kolektor: 2.5 };
 
 // Pengepul membeli hewan yang tidak terjual dengan harga murah.
 export const DEALER_RATE = 0.35;
