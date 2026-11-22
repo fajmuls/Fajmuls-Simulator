@@ -129,7 +129,7 @@ export class UI {
     hud.append(
       h('div', { class: 'hud-row' },
         h('div', { class: 'hud-cashbox' }, svgEl(uiIconSVG('coin'), 26), this.hudCash),
-        h('div', { class: 'hud-right' }, this.hudDay, this.hudStar, this.bellBtn, this.soundBtn)),
+        h('div', { class: 'hud-right' }, this.hudDay, this.hudStar)),
       h('div', { class: 'hud-row' }, this.hudLive, this.hudDebt),
       h('div', { class: 'bar' }, this.hudBar),
     );
@@ -152,29 +152,59 @@ export class UI {
   // ---------- Ambil hewan dari rak ----------
   openPicker(catId) {
     const scene = this.ctx.scene();
+    this.pickCollapsed = {};
     this.openSheet(`Rak ${CATEGORIES.find((c) => c.id === catId).name}`, () => {
       const e = this.e;
       const orders = scene?.waitingOrders() || [];
       const out = [h('div', { class: 'sub' }, 'Pilih hewan yang diminta pelanggan (bertanda), lalu ketuk pelanggannya. Waktu berhenti selama kamu memilih.')];
-      const list = e.state.farm.animals.filter((a) => getItem(a.itemId).cat === catId)
-        .sort((a, b) => a.itemId.localeCompare(b.itemId) || rarityIdx(b.rarity) - rarityIdx(a.rarity) || b.size - a.size);
+      const list = e.state.farm.animals.filter((a) => getItem(a.itemId).cat === catId);
       if (!list.length) out.push(h('div', { class: 'card' }, 'Rak kosong. Panen dulu di Kolam atau Kandang, atau beli bibit di Pasar.'));
-      const groups = [];
-      for (const a of list) {
-        const g = groups.find((x) => x.a.itemId === a.itemId && x.a.rarity === a.rarity && x.a.size === a.size);
-        if (g) g.n += 1; else groups.push({ a, n: 1 });
-      }
       const wants = (a) => orders.some((o) => o.itemId === a.itemId && rarityIdx(a.rarity) + 1 >= o.minQuality);
-      groups.sort((x, y) => Number(wants(y.a)) - Number(wants(x.a)));
-      for (const { a, n } of groups) {
-        const it = getItem(a.itemId);
-        const want = wants(a);
-        out.push(h('button', { class: `card animal${want ? ' hero' : ''}`, style: `text-align:left;border-left:6px solid ${rarOf(a).color}`,
-          onClick: () => { scene?.setCarry(a); audio.play('ok'); this.closeModal(); } },
-        h('div', { class: 'row', style: 'gap:10px;flex-wrap:nowrap' }, svgEl(animalSVG(it), 40),
-          h('div', { class: 'grow' }, h('b', {}, n > 1 ? `${it.name} ×${n}` : it.name), h('div', { class: 'sub' }, `${sizeLabel(a.itemId, a.size)} · `, h('span', { style: `color:${rarOf(a).color};font-weight:800` }, rarOf(a).name))),
-          want ? h('span', { class: 'badge good' }, 'dipesan') : null,
-          h('span', { class: 'price' }, rp(animalValue(a))))));
+      // tumpukan per spesies, di dalamnya per rarity
+      const species = [];
+      for (const a of list) {
+        let sp = species.find((x) => x.id === a.itemId);
+        if (!sp) { sp = { id: a.itemId, it: getItem(a.itemId), rars: [], n: 0, want: false }; species.push(sp); }
+        let r = sp.rars.find((x) => x.rarity === a.rarity);
+        if (!r) { r = { rarity: a.rarity, items: [] }; sp.rars.push(r); }
+        r.items.push(a);
+        sp.n += 1;
+        if (wants(a)) sp.want = true;
+      }
+      species.sort((x, y) => Number(y.want) - Number(x.want) || y.it.tier - x.it.tier);
+      this.pickCollapsed ||= {};
+      const isOpen = (sp) => this.pickCollapsed[sp.id] ?? (sp.want || species.length <= 2);
+      if (species.length > 1) {
+        out.push(h('div', { class: 'row' },
+          h('button', { class: 'btn secondary small', onClick: () => { species.forEach((sp) => { this.pickCollapsed[sp.id] = true; }); this.rerender(); } }, '▼ Buka semua'),
+          h('button', { class: 'btn secondary small', onClick: () => { species.forEach((sp) => { this.pickCollapsed[sp.id] = false; }); this.rerender(); } }, '▲ Lipat semua')));
+      }
+      for (const sp of species) {
+        const open = isOpen(sp);
+        sp.rars.sort((x, y) => rarityIdx(y.rarity) - rarityIdx(x.rarity));
+        const best = sp.rars[0];
+        out.push(h('button', { class: `card stack-head${sp.want ? ' hero' : ''}`, style: 'text-align:left', onClick: () => { this.pickCollapsed[sp.id] = !open; this.rerender(); } },
+          h('div', { class: 'row', style: 'gap:10px;flex-wrap:nowrap' }, svgEl(animalSVG(sp.it), 36),
+            h('div', { class: 'grow' }, h('b', {}, `${sp.it.name} ×${sp.n}`),
+              h('div', { class: 'sub' }, `${sp.rars.length} rarity · terbaik ${rarOf({ rarity: best.rarity }).name}`)),
+            sp.want ? h('span', { class: 'badge good' }, 'dipesan') : null,
+            h('span', { class: 'badge' }, open ? '▲' : '▼'))));
+        if (!open) continue;
+        for (const r of sp.rars) {
+          // satu tumpukan rarity: yang diambil ialah hewan bernilai tertinggi
+          const sorted = r.items.slice().sort((x, y) => animalValue(y) - animalValue(x));
+          const top = sorted[0];
+          const low = sorted[sorted.length - 1];
+          const want = wants(top);
+          const rar = rarOf(top);
+          out.push(h('button', { class: `card animal stack-sub${want ? ' hero' : ''}`, style: `text-align:left;margin-left:14px;border-left:6px solid ${rar.color}`,
+            onClick: () => { scene?.setCarry(top); audio.play('ok'); this.closeModal(); } },
+          h('div', { class: 'row', style: 'gap:10px;flex-wrap:nowrap' },
+            h('div', { class: 'grow' }, h('b', { style: `color:${rar.color}` }, `${rar.name}${r.items.length > 1 ? ` ×${r.items.length}` : ''}`),
+              h('div', { class: 'sub' }, sizeLabel(top.itemId, top.size))),
+            want ? h('span', { class: 'badge good' }, 'dipesan') : null,
+            h('span', { class: 'price' }, r.items.length > 1 && animalValue(low) !== animalValue(top) ? `${rp(animalValue(low))}–${rp(animalValue(top))}` : rp(animalValue(top))))));
+        }
       }
       return out;
     });
@@ -383,97 +413,20 @@ export class UI {
     const overlay = h('div', { class: 'overlay', onClick: (ev) => { if (ev.target === overlay) this.closeModal(); } }, sheet);
     document.getElementById('modal-root').append(overlay);
     this.modal = { overlay, sheet, body, pager, render, page: 0, pages: 1 };
-    let sx = null;
-    body.addEventListener('touchstart', (ev) => { sx = ev.touches[0].clientX; }, { passive: true });
-    body.addEventListener('touchend', (ev) => {
-      if (sx === null) return;
-      const dx = ev.changedTouches[0].clientX - sx;
-      sx = null;
-      if (Math.abs(dx) > 70) this.gotoPage(this.modal.page + (dx < 0 ? 1 : -1));
-    }, { passive: true });
     this.rerender();
   }
 
+  // Panel biasa: isi di-scroll vertikal. Node bertanda .sticky (tab pilihan) menempel di atas.
   rerender() {
-    if (!this.modal) return;
-    this.modal.nodes = [].concat(this.modal.render()).filter(Boolean);
-    this.layoutPages();
-  }
-
-  gotoPage(p) {
     const m = this.modal;
     if (!m) return;
-    m.page = Math.max(0, Math.min(m.pages - 1, p));
-    this.showPage();
+    const st = m.body.scrollTop;
+    m.nodes = [].concat(m.render()).filter(Boolean);
+    m.body.replaceChildren(...m.nodes);
+    m.body.scrollTop = st;
   }
 
-  // Memecah node menjadi halaman yang pas di layar. Node bertanda .sticky (tab) muncul di tiap halaman.
-  layoutPages() {
-    const m = this.modal;
-    const { body, nodes } = m;
-    m.sheet.style.height = '';
-    body.style.flex = '';
-    body.style.overflowY = 'hidden';
-    body.replaceChildren(...nodes);
-    const cs = getComputedStyle(body);
-    const gap = parseFloat(cs.rowGap) || 10;
-    const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
-    // Ukur dua kali: tanpa bilah halaman (satu halaman) dan dengan bilah halaman (beberapa halaman).
-    const pg = m.pager;
-    pg.style.display = 'none';
-    const availFull = body.clientHeight - pad;
-    pg.style.display = '';
-    pg.replaceChildren(h('div', { style: 'height:36px' }));
-    const availPaged = body.clientHeight - pad;
-    const hs = nodes.map((n) => n.offsetHeight);
-    let si = 0;
-    while (si < nodes.length && nodes[si].classList?.contains('sticky')) si++;
-    const sticky = nodes.slice(0, si);
-    const stickyH = hs.slice(0, si).reduce((a, b) => a + b + gap, 0);
-    const restH = hs.slice(si).reduce((a, b) => a + b, 0) + gap * Math.max(0, nodes.length - si - 1);
-    const single = stickyH + restH <= availFull + 1;
-    m.single = single;
-    m.fitH = stickyH + restH + pad;
-    const avail = single ? availFull : availPaged;
-    const limit = Math.max(120, avail - stickyH);
-    const pages = [];
-    let cur = [];
-    let used = 0;
-    for (let i = si; i < nodes.length; i++) {
-      const need = hs[i] + (cur.length ? gap : 0);
-      if (cur.length && used + need > limit) { pages.push(cur); cur = []; used = 0; }
-      used += hs[i] + (cur.length ? gap : 0);
-      cur.push({ n: nodes[i], h: hs[i] });
-    }
-    if (cur.length || !pages.length) pages.push(cur);
-    m.sticky = sticky;
-    m.pageList = pages;
-    m.limit = limit;
-    m.pages = pages.length;
-    m.page = Math.max(0, Math.min(m.page, m.pages - 1));
-    this.showPage();
-  }
-
-  showPage() {
-    const m = this.modal;
-    const page = m.pageList[m.page] || [];
-    m.body.replaceChildren(...m.sticky, ...page.map((x) => x.n));
-    m.body.scrollTop = 0;
-    const tall = page.length === 1 && page[0].h > m.limit + 2;
-    m.body.style.overflowY = tall ? 'auto' : 'hidden';
-    const pg = m.pager;
-    if (m.pages <= 1) {
-      pg.style.display = 'none';
-      if (m.single && !tall) { m.sheet.style.height = 'auto'; m.body.style.flex = '0 0 auto'; }
-      return;
-    }
-    pg.style.display = '';
-    pg.replaceChildren(
-      h('button', { class: 'pg-btn', disabled: m.page === 0, onClick: () => this.gotoPage(m.page - 1), 'aria-label': 'Halaman sebelumnya' }, '◀'),
-      h('div', { class: 'pg-dots' }, Array.from({ length: m.pages }, (_, i) => h('i', { class: i === m.page ? 'on' : '', onClick: () => this.gotoPage(i) }))),
-      h('span', { class: 'pg-n' }, `${m.page + 1}/${m.pages}`),
-      h('button', { class: 'pg-btn', disabled: m.page >= m.pages - 1, onClick: () => this.gotoPage(m.page + 1), 'aria-label': 'Halaman berikutnya' }, '▶'));
-  }
+  gotoPage() {}
 
   closeModal() {
     clearInterval(this.modalTimer);
@@ -660,7 +613,7 @@ export class UI {
           h('div', { class: 'sub', style: 'white-space:pre-line' }, [
             '1. Beli bibit dan pakan di Pasar.',
             '2. Tanam di Kolam, Kebun, atau Kandang. Tunggu tumbuh, lalu ketuk untuk panen.',
-            '3. Buka toko, ketuk rak untuk mengambil hewan, ketuk pelanggan untuk menyerahkan.',
+            '3. Buka toko, ketuk rak untuk mengambil hewan, lalu ketuk pelanggan untuk menyerahkan.',
             '4. Hewan langka dibayar mahal. Pakan mahal dan pet membantu peluang langka.',
             '5. Ikuti cerita Pak Pasar dan selesaikan misi harian.',
           ].join('\n'))),
@@ -668,6 +621,8 @@ export class UI {
           h('label', { class: 'sub' }, 'Efek suara', h('input', { type: 'range', min: 0, max: 100, value: Math.round(audio.sfxVol * 100), onInput: (ev) => audio.setSfx(Number(ev.target.value) / 100), onChange: () => audio.play('ok') })),
           h('label', { class: 'sub' }, 'Musik latar', h('input', { type: 'range', min: 0, max: 100, value: Math.round(audio.musicVol * 100), onInput: (ev) => audio.setMusic(Number(ev.target.value) / 100) })),
           h('button', { class: 'btn secondary small', onClick: () => { audio.unlock(); audio.setMuted(!audio.muted); this.syncSound(); this.rerender(); } }, audio.muted ? 'Suara mati, tekan untuk menyalakan' : 'Suara menyala, tekan untuk membisukan')),
+        h('div', { class: 'card' }, h('b', {}, 'Notifikasi'),
+          h('button', { class: 'btn secondary small', onClick: () => this.openRiwayat() }, 'Lihat riwayat notifikasi')),
         h('div', { class: 'card' }, h('b', {}, 'Tampilan'),
           h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: getA11y().big, onChange: (ev) => setA11y({ big: ev.target.checked }) }), 'Huruf besar'),
           h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: getA11y().contrast, onChange: (ev) => setA11y({ contrast: ev.target.checked }) }), 'Kontras tinggi'),
@@ -694,7 +649,7 @@ export class UI {
           h('button', { class: 'btn danger', disabled: e.state.phase === 'open', onClick: () => {
             if (confirm('Hapus progres dan mulai game baru? Ini tidak bisa dibatalkan.')) { this.ctx.newGame(); this.closeModal(); }
           } }, 'Mulai game baru')),
-        h('div', { class: 'sub', style: 'text-align:center' }, `Pasar Satwa by Fajmuls · v6.0 · 1 hari = ${DAY_LENGTH_SEC}s pada 1x`),
+        h('div', { class: 'sub', style: 'text-align:center' }, `Pasar Satwa by Fajmuls · v7.0 · 1 hari = ${DAY_LENGTH_SEC}s pada 1x`),
       ];
     });
   }

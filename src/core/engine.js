@@ -2,7 +2,7 @@ import {
   CATEGORIES, ITEMS, CUSTOMER_TYPES, UPGRADES, QUALITIES, SKILLS, POTIONS, STAFF, SHARES, PROPERTIES, EVENTS,
   SHOP_LEVELS, STAR_THRESH, STAR_POINTS, STAR_PERKS, DEPOSIT_TERMS, DEPOSIT_MIN, DEPOSIT_MAX_ACTIVE,
   SHARE_MIN_PRICE, SHARE_SELL_FEE, SHARE_HISTORY, PROPERTY_SELL_RATE, LOAN_TERMS, LOAN_MIN, LOAN_STEP,
-  LOAN_MAX_ACTIVE, LOAN_LATE_FEE, BREED_FEE_RATE, BREED_BASE_SLOTS, SKILL_POINT_EVERY_DAYS,
+  LOAN_MAX_ACTIVE, LOAN_LATE_FEE, BREED_FEE_RATE, BREED_BASE_SLOTS, SKILL_POINT_EVERY_DAYS, SKILL_POINT_EVERY_QUESTS,
   BASE_CAPACITY, CAPACITY_PER_RAK, BASE_MAX_QUALITY, START_CASH, DAILY_RENT,
   SPEED_STEPS, UPKEEP_PER_ANIMAL, UPKEEP_SHOP_STEP, SICK_CHANCE, THEFT_CHANCE, TAX_BRACKETS, WEALTH_TAX_FROM, WEALTH_TAX_RATE,
   getItem, getCategory, getQuality, getUpgrade, getSkill, getPotion, getStaff, getShare, getProperty,
@@ -16,7 +16,7 @@ import { planRegulars, onRegularPaid, maxBondLevel, claimRegular } from './regul
 import { ensureQuests, trackQuests, claimQuest, checkAchievements, claimAchievement } from './goals.js';
 
 export const DAY_LENGTH_SEC = 90; // lama jendela pelanggan datang pada kecepatan 1x
-export const STATE_VERSION = 6;
+export const STATE_VERSION = 7;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -88,7 +88,8 @@ export function migrate(input) {
   if (input.v === 2) return migrate(migrateV2(input));
   if (input.v === 3) return migrate(migrateV3(input));
   if (input.v === 4) return migrate(migrateV4(input));
-  if (input.v === 5) return migrateV5(input);
+  if (input.v === 5) return migrate(migrateV5(input));
+  if (input.v === 6) return migrateV6(input);
   return input;
 }
 
@@ -117,6 +118,16 @@ function migrateV3(input) {
 }
 
 // v5 -> v6: habitat di peta, cerita, statistik peternakan.
+// v6 -> v7: buku koleksi pet (pet yang sudah dimiliki dicatat).
+function migrateV6(input) {
+  const s = structuredClone(input);
+  s.v = 7;
+  s.pets = s.pets || farm.newPets();
+  s.pets.book = {};
+  for (const p of s.pets.owned) farm.noteBookPet(s.pets, p);
+  return s;
+}
+
 function migrateV5(input) {
   const s = structuredClone(input);
   s.v = 6;
@@ -238,6 +249,8 @@ export class GameEngine {
   equipPet(id) { return farm.equipPet(this, id); }
   unequipPet(id) { return farm.unequipPet(this, id); }
   releasePet(id) { return farm.releasePet(this, id); }
+  sellPet(id) { return farm.releasePet(this, id); }
+  sellSparePets(maxIdx) { return farm.sellSpare(this, maxIdx); }
   petSlots() { return farm.petSlots(this); }
   farmBuffs() { return farm.farmBuffs(this); }
   takeNotes() { const n = this.notes; this.notes = []; return n; }
@@ -283,20 +296,22 @@ export class GameEngine {
     const bf = (id) => (s.buffs[id] || 0) > 0;
     const hasStaff = (id) => !!s.staff[id];
     const count = P.count * (1 + 0.12 * up('dekorasi')) * (1 + 0.08 * sk('promosi')) * (bf('pemikat') ? 1.3 : 1) * (hasStaff('pramuniaga') ? 1.1 : 1) * (hasStaff('badut') ? 1.15 : 1) * (1 + 0.1 * up('renovasi')) * ev.count;
-    const disc = Math.min(0.5, P.disc + 0.03 * sk('tawar') + 0.03 * up('member') + (bf('borong') ? 0.12 : 0));
-    const wtp = P.wtp + 0.04 * sk('harga_prima') + (bf('hartawan') ? 0.15 : 0) + ev.wtp;
-    const vip = P.vip * (1 + 0.2 * sk('vipmagnet')) * (bf('vip') ? 2 : 1) * ev.vip;
-    const rentCut = Math.min(0.6, P.rent + 0.08 * sk('juragan'));
+    const disc = Math.min(0.5, P.disc + 0.025 * sk('tawar') + 0.03 * up('member') + (bf('borong') ? 0.12 : 0));
+    const wtp = P.wtp + 0.03 * sk('harga_prima') + (bf('hartawan') ? 0.15 : 0) + ev.wtp;
+    const vip = P.vip * (1 + 0.15 * sk('vipmagnet')) * (bf('vip') ? 2 : 1) * ev.vip;
+    const rentCut = Math.min(0.6, P.rent + 0.1 * sk('juragan'));
     const rentBase = Math.round(DAILY_RENT * (1 + 0.5 * (s.shopLevel - 1)));
     const rent = Math.max(0, Math.round(rentBase * (1 - rentCut)));
-    const repGain = (1 + 0.1 * sk('ramah') + (bf('sahabat') ? 0.5 : 0)) * (hasStaff('satpam') ? 1.1 : 1);
-    const repLoss = Math.max(0.1, 1 - 0.1 * sk('ramah') - (bf('sahabat') ? 0.5 : 0));
+    const repGain = (1 + 0.12 * sk('ramah') + 0.1 * sk('viral') + (bf('sahabat') ? 0.5 : 0)) * (hasStaff('satpam') ? 1.1 : 1);
+    const repLoss = Math.max(0.1, 1 - 0.12 * sk('ramah') - (bf('sahabat') ? 0.5 : 0));
     const payTime = Math.max(0.15, 1 - 0.15 * up('kasir_modern') - 0.12 * sk('kasir_cepat') - (hasStaff('kasir') ? 0.45 : 0));
-    return { count, disc, wtp, vip, rent, repGain, repLoss, payTime, event: ev };
+    const payMul = 1 + 0.05 * sk('lidah_emas');
+    return { count, disc, wtp, vip, rent, repGain, repLoss, payTime, payMul, event: ev };
   }
 
   wages() {
-    return STAFF.reduce((sum, st) => sum + (this.state.staff[st.id] ? st.wage : 0), 0);
+    const cut = Math.min(0.6, 0.08 * (this.state.skills.akuntan || 0));
+    return Math.round(STAFF.reduce((sum, st) => sum + (this.state.staff[st.id] ? st.wage : 0), 0) * (1 - cut));
   }
 
   loanDue() {
@@ -349,7 +364,7 @@ export class GameEngine {
   capacity() {
     const s = this.state;
     const shop = SHOP_LEVELS.slice(0, s.shopLevel).reduce((sum, l) => sum + l.capacity, 0);
-    return BASE_CAPACITY + shop + s.upgrades.rak * CAPACITY_PER_RAK + 10 * (s.skills.gudang || 0);
+    return BASE_CAPACITY + shop + s.upgrades.rak * CAPACITY_PER_RAK + 12 * (s.skills.gudang || 0);
   }
 
   usedCapacity() {
@@ -444,7 +459,8 @@ export class GameEngine {
   // ---------- Skill ----------
   skillPointsTotal() {
     const s = this.state;
-    return STAR_POINTS[s.stars - 1] + (s.shopLevel - 1) + Math.floor((s.day - 1) / SKILL_POINT_EVERY_DAYS) + (s.bonusPoints || 0);
+    return STAR_POINTS[s.stars - 1] + 2 * (s.shopLevel - 1) + Math.floor((s.day - 1) / SKILL_POINT_EVERY_DAYS)
+      + Math.floor((s.stats.questsDone || 0) / SKILL_POINT_EVERY_QUESTS) + (s.bonusPoints || 0);
   }
 
   skillPointsSpent() {
@@ -454,6 +470,12 @@ export class GameEngine {
   skillPointsFree() {
     return this.skillPointsTotal() - this.skillPointsSpent();
   }
+
+  // Pengali kecepatan jalan karakter (skill Langkah Cepat, +10% per rank).
+  walkMul() { return 1 + 0.1 * (this.state.skills.langkah || 0); }
+
+  // Batas kesabaran sisa agar pelayanan masih dihitung cepat (skill Tangan Sigap melonggarkan).
+  fastThreshold() { return Math.max(0.15, 0.5 - 0.08 * (this.state.skills.sigap || 0)); }
 
   skillRank(id) {
     return this.state.skills[id] || 0;
@@ -700,7 +722,7 @@ export class GameEngine {
     const bibit = (s.buffs.bibit || 0) > 0;
     const duration = Math.max(1, 2 + it.tier - (perawat ? 1 : 0));
     const litter = 1 + (rng() < 0.5 ? 1 : 0) + (it.tier <= 2 ? 1 : 0) + (bibit ? 1 : 0);
-    const upChance = clamp(0.1 + 0.1 * (s.skills.bibit_unggul || 0) + (bibit ? 0.2 : 0) + (perawat ? 0.1 : 0), 0, 0.8);
+    const upChance = clamp(0.1 + 0.08 * (s.skills.bibit_unggul || 0) + (bibit ? 0.2 : 0) + (perawat ? 0.1 : 0), 0, 0.8);
     const offspring = [];
     for (let i = 0; i < litter; i++) offspring.push(Math.min(QUALITIES.length, quality + (rng() < upChance ? 1 : 0)));
     s.breeding.push({ id, itemId, quality, pairCost, fee, ready: s.day + duration, offspring });
@@ -1050,7 +1072,9 @@ export class GameEngine {
     const item = getItem(a.itemId);
     const raw = farm.animalValue(a) * want.noise * (1 + m.wtp + this.farmBuffs().value) * (1 + (customer.bonusWtp || 0));
     const cap = farm.animalValue(a) * (farm.PAY_CAP[type.id] ?? 1.25) * (customer.regularId ? 1.2 : 1);
-    const price = Math.max(1, Math.round(Math.min(raw, cap)));
+    const ev = this.eventOf();
+    const lomba = level >= 3 && ev.rare ? 1 + ev.rare : 1; // Rare ke atas
+    const price = Math.max(1, Math.round(Math.min(raw, cap) * m.payMul * lomba));
     fm.animals.splice(idx, 1);
     const list = this.reserved.get(customer.id) || [];
     list.push({ key: lotKey(a.itemId, level), qty: 1, cost: a.cost, revenue: price, animal: a });

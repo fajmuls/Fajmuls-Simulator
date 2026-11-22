@@ -120,16 +120,25 @@ export function slotCount(e) {
 }
 
 export function petSlots(e) {
-  return 2 + (e.state.shopLevel >= 3 ? 1 : 0) + (e.state.stars >= 4 ? 1 : 0);
+  return 2 + (e.state.shopLevel >= 3 ? 1 : 0) + (e.state.stars >= 4 ? 1 : 0) + (e.state.skills.slot_pet || 0);
 }
 
 export function farmBuffs(e) {
   const b = { luck: 0, grow: 0, value: 0, patience: 0, tip: 0 };
   const pets = e.state.pets;
+  const sk = e.state.skills;
+  const petMul = 1 + 0.12 * (sk.pet_kuat || 0);
   for (const id of pets.equipped) {
     const p = pets.owned.find((x) => x.id === id);
-    if (p) b[getPetKind(p.kind).buff] += petBuffValue(p);
+    if (p) b[getPetKind(p.kind).buff] += petBuffValue(p) * petMul;
   }
+  b.grow += 0.04 * (sk.tumbuh_cepat || 0);
+  b.luck += 0.06 * (sk.mata_elang || 0);
+  b.patience += 0.08 * (sk.sabar || 0);
+  b.tip += 0.08 * (sk.tip_besar || 0);
+  const ev = e.eventOf();
+  b.tip += ev.tip || 0;
+  b.patience += ev.patience || 0;
   if (e.state.staff.perawat) b.grow += 0.15;
   if (e.state.staff.badut) b.patience += 0.2;
   if (e.state.staff.penjaga) b.patience += 0.15;
@@ -146,8 +155,14 @@ export function growMs(e, itemId, feedId) {
 
 export function bibitPrice(e, itemId, day = e.state.day) {
   const it = getItem(itemId);
-  return Math.max(10, Math.round(it.retail * BIBIT_RATE * e._factors(day)[itemId].wf * (1 - e.mods().disc)));
+  const cut = Math.min(0.75, e.mods().disc + 0.04 * (e.state.skills.bibit_murah || 0));
+  return Math.max(10, Math.round(it.retail * BIBIT_RATE * e._factors(day)[itemId].wf * e.eventOf(day).wholesale * (1 - cut)));
 }
+
+export const feedPrice = (e, feedOrId) => {
+  const f = typeof feedOrId === 'string' ? getFeed(feedOrId) : feedOrId;
+  return Math.max(1, Math.round(f.price * (1 - 0.06 * (e.state.skills.pakan_hemat || 0))));
+};
 
 export function buyBibit(e, itemId, n) {
   if (!Number.isInteger(n) || n < 1) throw new Error('Jumlah tidak valid');
@@ -164,10 +179,11 @@ export function buyBibit(e, itemId, n) {
 export function buyFeed(e, feedId, n) {
   const f = getFeed(feedId);
   if (!Number.isInteger(n) || n < 1) throw new Error('Jumlah tidak valid');
-  debit(e.state.ledger, e.state.day, 'buy_stock', f.price * n, `Beli ${n} ${f.name}`);
+  const unit = feedPrice(e, f);
+  debit(e.state.ledger, e.state.day, 'buy_stock', unit * n, `Beli ${n} ${f.name}`);
   const fe = farmOf(e).feeds;
   fe[feedId] = (fe[feedId] || 0) + n;
-  return f.price * n;
+  return unit * n;
 }
 
 export function buySlot(e, hab = null) {
@@ -211,7 +227,7 @@ export function plant(e, slot, itemId, feedId = null, qty = 1) {
   const now = e.now();
   fm.slots[slot] = {
     itemId, feed: feedId, plantedAt: now, readyAt: now + growMs(e, itemId, feedId), qty,
-    cost: price + (feedId ? getFeed(feedId).price : 0),
+    cost: price + (feedId ? feedPrice(e, feedId) : 0),
   };
   e.state.stats.planted = (e.state.stats.planted || 0) + qty;
   e.track('plant', qty);
@@ -234,7 +250,11 @@ export function harvest(e, slot) {
   const feed = s.feed ? getFeed(s.feed) : null;
   const luck = (feed ? feed.luck : 0) + farmBuffs(e).luck * 10 + (e.eventOf().luck || 0);
   const out = [];
-  const n = slotQty(s);
+  let n = slotQty(s);
+  // hewan bonus: Musim Subur (pasti) + skill Panen Berkah (peluang)
+  const bonusRng = mulberry32(hashSeed(e.state.seed, 'bonus', fm.rolls));
+  n += e.eventOf().bonus || 0;
+  if (bonusRng() < 0.08 * (e.state.skills.panen_ganda || 0)) n += 1;
   for (let k = 0; k < n; k++) {
     const rng = mulberry32(hashSeed(e.state.seed, 'harvest', fm.rolls));
     fm.rolls += 1;
@@ -294,8 +314,27 @@ export function hatch(e, eggId) {
   const kind = PET_KINDS[Math.floor(rng() * PET_KINDS.length)];
   const pet = { id: pets.nextId++, kind: kind.id, rarity: RARITIES[r].id };
   pets.owned.push(pet);
+  noteBookPet(pets, pet);
   e.state.stats.hatched = (e.state.stats.hatched || 0) + 1;
   return pet;
+}
+
+// Buku koleksi pet: mencatat semua pet yang pernah didapat, walau sudah dijual.
+export function noteBookPet(pets, pet) {
+  pets.book ||= {};
+  const k = (pets.book[pet.kind] ||= {});
+  k[pet.rarity] = (k[pet.rarity] || 0) + 1;
+}
+
+export const petSellValue = (p) => Math.round(EGGS[0].price * 0.25 * RARITIES[rarityIdx(p.rarity)].buff);
+
+// Jual sekaligus semua pet di inventori yang tidak dipasang dan rarity-nya <= maxRarityIdx.
+export function sellSpare(e, maxRarityIdx) {
+  const pets = e.state.pets;
+  const list = pets.owned.filter((p) => !pets.equipped.includes(p.id) && rarityIdx(p.rarity) <= maxRarityIdx);
+  let total = 0;
+  for (const p of list) total += releasePet(e, p.id);
+  return { n: list.length, total };
 }
 
 export function equipPet(e, petId) {
@@ -316,10 +355,10 @@ export function releasePet(e, petId) {
   const pets = e.state.pets;
   const p = pets.owned.find((x) => x.id === petId);
   if (!p) throw new Error('Pet tidak ada');
-  const refund = Math.round(EGGS[0].price * 0.25 * RARITIES[rarityIdx(p.rarity)].buff);
+  const refund = petSellValue(p);
   pets.owned = pets.owned.filter((x) => x.id !== petId);
   pets.equipped = pets.equipped.filter((x) => x !== petId);
-  credit(e.state.ledger, e.state.day, 'reward', refund, `Melepas pet ${getPetKind(p.kind).name}`);
+  credit(e.state.ledger, e.state.day, 'reward', refund, `Jual pet ${getPetKind(p.kind).name}`);
   return refund;
 }
 
@@ -328,6 +367,6 @@ export const newFarm = () => ({
   habs: [...START_HABS],
   animals: [], feeds: {}, bibit: {}, nextAnimal: 1, rolls: 0, book: {},
 });
-export const newPets = () => ({ owned: [], equipped: [], nextId: 1, rolls: 0 });
+export const newPets = () => ({ owned: [], equipped: [], nextId: 1, rolls: 0, book: {} });
 
 export { ITEMS };

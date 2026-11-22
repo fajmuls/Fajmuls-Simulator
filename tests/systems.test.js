@@ -124,28 +124,46 @@ describe('bintang dan skill', () => {
     expect(e.state.stars).toBe(2);
   });
 
-  it('poin skill diturunkan dari bintang, level toko, dan hari', () => {
+  it('poin skill diturunkan dari bintang, level toko, hari, dan misi', () => {
     const e = rich(1, 1);
     expect(e.skillPointsTotal()).toBe(0);
     e.state.stars = 3;
-    expect(e.skillPointsTotal()).toBe(2);
-    e.state.day = 21;
     expect(e.skillPointsTotal()).toBe(4);
+    e.state.day = 22; // 7 kelipatan 3 hari
+    expect(e.skillPointsTotal()).toBe(11);
+    e.state.stats.questsDone = 7; // 2 poin dari 6 misi
+    expect(e.skillPointsTotal()).toBe(13);
   });
 
-  it('skill butuh prasyarat dan poin', () => {
-    const e = rich(1, 3);
-    e.state.day = 11; // 2 + 1 = 3 poin
+  it('skill butuh prasyarat dan poin, efeknya kuat', () => {
+    const e = rich(1, 1);
+    e.state.day = 10; // 3 poin
+    expect(e.skillPointsFree()).toBe(3);
     expect(() => e.learnSkill('harga_prima')).toThrow('Butuh');
     e.learnSkill('tawar');
     e.learnSkill('tawar');
     e.learnSkill('tawar');
-    expect(() => e.learnSkill('tawar')).toThrow();
+    expect(() => e.learnSkill('tawar')).toThrow('Poin');
     expect(e.skillPointsFree()).toBe(0);
-    expect(() => e.learnSkill('harga_prima')).toThrow('Poin');
-    expect(e.mods().disc).toBeCloseTo(0.03 + 0.09, 5);
+    expect(e.mods().disc).toBeCloseTo(0.075, 5);
     e.resetSkills();
     expect(e.skillPointsFree()).toBe(3);
+  });
+
+  it('skill baru: jalan, VIP, harga jual, gaji', () => {
+    const e = rich(1, 1);
+    expect(e.walkMul()).toBe(1);
+    e.state.skills.langkah = 10;
+    expect(e.walkMul()).toBeCloseTo(2, 5);
+    const v0 = e.mods().vip;
+    e.state.skills.vipmagnet = 8;
+    expect(e.mods().vip / v0).toBeCloseTo(2.2, 5);
+    e.state.skills.lidah_emas = 8;
+    expect(e.mods().payMul).toBeCloseTo(1.4, 5);
+    e.state.staff.kasir = true;
+    const w0 = e.wages();
+    e.state.skills.akuntan = 5;
+    expect(e.wages()).toBeLessThan(w0);
   });
 });
 
@@ -417,7 +435,7 @@ describe('migrasi simpanan versi 1', () => {
   it('memuat simpanan lama tanpa kehilangan stok, upgrade, dan spesies', () => {
     const old = v1State();
     const loaded = deserialize(serialize(old));
-    expect(loaded.v).toBe(6);
+    expect(loaded.v).toBe(7);
     expect(loaded.stats.items).toEqual({});
     expect(loaded.upgrades.kecepatan).toBe(0);
     expect(loaded.farm.animals.filter((a) => a.itemId === 'mas').length).toBe(4);
@@ -474,7 +492,7 @@ describe('v3: kecepatan, pengeluaran, karyawan baru', () => {
     const copy = structuredClone(v2);
     const m = migrate(v2);
     expect(v2).toEqual(copy);
-    expect(m.v).toBe(6);
+    expect(m.v).toBe(7);
     expect(m.upgrades.kecepatan).toBe(0);
     expect(m.stats.items).toEqual({});
     expect(m.farm.animals.filter((a) => a.itemId === 'cacing').length).toBe(5);
@@ -554,7 +572,7 @@ describe('v4: migrasi misi, pencapaian, langganan, tutorial', () => {
     const copy = structuredClone(v3);
     const m = migrate(v3);
     expect(v3).toEqual(copy);
-    expect(m.v).toBe(6);
+    expect(m.v).toBe(7);
     expect(m.stats.sold).toBe(12);
     expect(m.stats.bought).toBe(0);
     expect(m.quests).toEqual({ dayId: 0, weekId: -1, daily: [], weekly: [] });

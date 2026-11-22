@@ -19,14 +19,14 @@ export const HUBS = {
   kandang: { name: 'Kandang', zoom: 0.8, x: 1090, y: 250, spot: { x: 1090, y: 445 } },
   pasar: { name: 'Pasar', x: 250, y: 690, spot: { x: 250, y: 770 } },
   pet: { name: 'Rumah Pet', x: 1150, y: 690, spot: { x: 1150, y: 770 } },
-  toko: { name: 'Toko', zoom: 0.85, x: 700, y: 760, spot: { x: 700, y: 785 } },
+  toko: { name: 'Toko', zoom: 0.85, x: 700, y: 760, spot: { x: 700, y: 850 } },
   plaza: { name: 'Alun-alun', x: 700, y: 330, spot: { x: 700, y: 450 } },
 };
 
 // Layar: Kebun (kolam + kandang, digeser kiri-kanan) dan Toko (terkunci saat buka).
 export const VIEWS = {
   kebun: { x: 0, y: 0, w: 1400, h: 530, fit: 'h' },
-  toko: { x: 405, y: 450, w: 590, h: 550, fit: 'w' },
+  toko: { x: 455, y: 520, w: 490, h: 450, fit: 'w' },
 };
 
 const PLOTS = {
@@ -36,12 +36,12 @@ const PLOTS = {
 };
 const PLOT_SIZE = { kolam: [170, 112], kebun: [120, 84], kandang: [112, 126] };
 
-const RACK_Y = 735;
+const RACK_Y = 795;
 const rackX = (i) => 532 + i * 84;
-const QUEUE_Y = 840;
-const ROAD_Y = 935;
+const QUEUE_Y = 928;
+const ROAD_Y = 948;
 const ENTRY_X = 420;
-const slotX = (k) => 868 - k * 46;
+const slotX = (k) => 812 - k * 56;
 const WALK_SPEED = 70;
 const PLAYER_SPEED = 230;
 
@@ -323,7 +323,7 @@ export class WorldScene extends Phaser.Scene {
     this._label(1150, 712, 'RUMAH PET', 120);
     // toko
     this.add.image(700, 700, 'toko').setOrigin(0.5, 1).setDisplaySize(380, 150).setDepth(700);
-    this.add.image(880, 800, 'counter').setOrigin(0.5, 1).setScale(0.45).setDepth(800);
+    this.add.image(884, 878, 'counter').setOrigin(0.5, 1).setScale(0.45).setDepth(878);
     // papan nama hub
     this._label(300, 84, 'KOLAM & KEBUN', 160);
     this._label(1100, 84, 'KANDANG SATWA', 160);
@@ -441,8 +441,8 @@ export class WorldScene extends Phaser.Scene {
     CATEGORIES.forEach((cat, i) => {
       const cx = rackX(i);
       const open = e.categoryOpen(cat.id);
-      const rack = this.add.image(cx, RACK_Y, 'rack').setOrigin(0.5, 1).setDisplaySize(80, 92).setDepth(RACK_Y);
-      const lab = T(this, cx, RACK_Y - 96, cat.short, 11).setDepth(RACK_Y + 1);
+      const rack = this.add.image(cx, RACK_Y, 'rack').setOrigin(0.5, 1).setDisplaySize(78, 88).setDepth(RACK_Y);
+      const lab = T(this, cx, RACK_Y - 94, cat.short, 11, '#3b2a1c', { backgroundColor: '#ffe6a8', padding: { x: 4, y: 1 } }).setDepth(RACK_Y + 1);
       this.rackSprites.push(rack, lab);
       if (!open) {
         const cover = this.add.rectangle(cx, RACK_Y - 46, 70, 76, 0x3b2a1c, 0.72).setDepth(RACK_Y + 2);
@@ -476,7 +476,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   refreshStaff() {
-    const spots = { kasir: [880, 812], pramuniaga: [560, 790], penjaga: [640, 790], satpam: [510, 880], badut: [800, 905], perawat: [330, 462] };
+    const spots = { kasir: [886, 848], pramuniaga: [560, 850], penjaga: [640, 850], satpam: [500, 900], badut: [560, 930], perawat: [330, 462] };
     for (const st of STAFF) {
       const on = !!this.engine.state.staff[st.id];
       let sp = this.staffSprites[st.id];
@@ -615,7 +615,13 @@ export class WorldScene extends Phaser.Scene {
 
   // ---------- Pemain ----------
   // Karakter diam di toko: ketukan langsung bekerja tanpa berjalan.
-  _goTo(x, y, then) { then?.(); }
+  _goTo(x, y, then) {
+    // Di Toko karakter berjalan sungguhan (kecepatan dari skill); di Kebun ketukan langsung bekerja.
+    if (this.view !== 'toko') { then?.(); return; }
+    const tx = Math.max(500, Math.min(900, x));
+    const ty = Math.max(822, Math.min(935, y));
+    this.playerTarget = { x: tx, y: ty, then };
+  }
 
   _movePlayer(time, dt) {
     const t = this.playerTarget;
@@ -624,7 +630,7 @@ export class WorldScene extends Phaser.Scene {
       const dx = t.x - this.player.x;
       const dy = t.y - this.playerY;
       const dist = Math.hypot(dx, dy);
-      const step = PLAYER_SPEED * dt;
+      const step = PLAYER_SPEED * (this.engine.walkMul?.() ?? 1) * dt;
       if (dist <= step) {
         this.player.x = t.x;
         this.playerY = t.y;
@@ -680,7 +686,7 @@ export class WorldScene extends Phaser.Scene {
     const cust = this.customers.find((c) => c.state === 'waiting' && Math.abs(x - c.x) < 24 && y > c.y - 110 && y < c.y + 8);
     if (cust) {
       if (!this.carry) { this._popup(cust.x, cust.y - 100, 'Ambil hewannya di rak dulu', '#fff'); return; }
-      this._goTo(cust.x - 6, cust.y - 40, () => this._serve(cust));
+      this._goTo(cust.x, cust.y - 48, () => this._serve(cust));
       return;
     }
     // rak toko
@@ -688,7 +694,7 @@ export class WorldScene extends Phaser.Scene {
       const idx = CATEGORIES.findIndex((c, i) => Math.abs(x - rackX(i)) < 42);
       if (idx >= 0) {
         if (!this.engine.categoryOpen(CATEGORIES[idx].id)) { this._popup(rackX(idx), RACK_Y - 110, `Butuh Toko Lv ${CATEGORIES[idx].needShop}`, '#fff'); return; }
-        this._goTo(rackX(idx), RACK_Y + 40, () => {
+        this._goTo(rackX(idx), RACK_Y + 38, () => {
           if (!this.dayActive) this._popup(rackX(idx), RACK_Y - 110, 'Buka toko dulu', '#fff');
           else this.hooks.onPickShelf?.(CATEGORIES[idx].id);
         });
@@ -750,39 +756,36 @@ export class WorldScene extends Phaser.Scene {
 
   _makeBubble(c) {
     const o = c.order;
-    const it = getItem(o.itemId);
     const rar = o.minQuality > 1 ? RARITIES[o.minQuality - 1] : null;
-    const w = 118;
-    const g = this.add.graphics().setDepth(9500);
-    g.fillStyle(0x3b2a1c, 1).fillRoundedRect(-w / 2 - 3, -50, w + 6, 52, 14);
-    g.fillStyle(0xffffff, 1).fillRoundedRect(-w / 2, -47, w, 46, 11);
+    const w = 54;
+    const g = this.add.graphics().setDepth(820);
+    g.fillStyle(0x3b2a1c, 1).fillRoundedRect(-w / 2 - 3, -56, w + 6, 58, 14);
+    g.fillStyle(0xffffff, 1).fillRoundedRect(-w / 2, -53, w, 52, 11);
     g.fillStyle(0x3b2a1c, 1).fillTriangle(-9, 2, 9, 2, 0, 12);
     g.fillStyle(0xffffff, 1).fillTriangle(-6, -1, 6, -1, 0, 8);
-    const icon = this.add.image(-w / 2 + 24, -24, `icon_${o.itemId}`).setDisplaySize(34, 34).setDepth(9501);
-    const name = T(this, 10, -33, it.name.length > 13 ? it.name.slice(0, 12) + '.' : it.name, 11).setDepth(9501);
+    const icon = this.add.image(0, -36, `icon_${o.itemId}`).setDisplaySize(32, 32).setDepth(821);
+    const short = rar ? (rar.name.length > 7 ? rar.name.slice(0, 6) + '.' : rar.name) : 'bebas';
     const need = rar
-      ? T(this, 10, -17, `min ${rar.name}`, 10, rar.color, { stroke: '#3b2a1c', strokeThickness: 2.5 }).setDepth(9501)
-      : T(this, 10, -17, 'bebas', 10, '#6b5a45').setDepth(9501);
-    const bar = this.add.graphics().setDepth(9501);
-    const label = T(this, 0, 0, customerName(c.data.id, c.data.type), 10, '#fff', { stroke: '#3b2a1c', strokeThickness: 3 }).setDepth(9502);
-    return { g, icon, name, need, bar, label, w, parts: [g, icon, name, need, bar, label] };
+      ? T(this, 0, -17, `≥${short}`, 10, rar.color, { stroke: '#3b2a1c', strokeThickness: 2.5 }).setDepth(821)
+      : T(this, 0, -17, 'bebas', 10, '#6b5a45').setDepth(821);
+    const bar = this.add.graphics().setDepth(821);
+    const label = T(this, 0, 0, customerName(c.data.id, c.data.type), 10, '#fff', { stroke: '#3b2a1c', strokeThickness: 3 }).setDepth(822);
+    return { g, icon, need, bar, label, w, parts: [g, icon, need, bar, label] };
   }
 
   _placeBubble(c) {
     const b = c.bubble;
     if (!b) return;
     const bx = c.x;
-    const lift = ((c.slot || 0) % 3) * 56;
-    const by = c.y - 76 - lift;
+    const by = c.y - 74;
     b.g.setPosition(bx, by);
-    b.icon.setPosition(bx - b.w / 2 + 24, by - 24);
-    b.name.setPosition(bx + 10, by - 33);
-    b.need.setPosition(bx + 10, by - 17);
+    b.icon.setPosition(bx, by - 36);
+    b.need.setPosition(bx, by - 17);
     b.label.setPosition(bx, c.y - 54);
     const f = Math.max(0, c.patience / c.maxPatience);
     b.bar.clear();
-    b.bar.fillStyle(0x3b2a1c, 1).fillRoundedRect(bx - 28, by - 9, 56, 7, 3);
-    b.bar.fillStyle(f > 0.5 ? 0x58b368 : f > 0.25 ? 0xffb938 : 0xe2574c, 1).fillRoundedRect(bx - 26, by - 7.5, Math.max(1, 52 * f), 4, 2);
+    b.bar.fillStyle(0x3b2a1c, 1).fillRoundedRect(bx - 21, by - 8, 42, 7, 3);
+    b.bar.fillStyle(f > 0.5 ? 0x58b368 : f > 0.25 ? 0xffb938 : 0xe2574c, 1).fillRoundedRect(bx - 19, by - 6.5, Math.max(1, 38 * f), 4, 2);
   }
 
   _clearBubble(c) {
@@ -809,7 +812,7 @@ export class WorldScene extends Phaser.Scene {
     this._clearBubble(c);
     this.queue = this.queue.filter((q) => q !== c);
     if (c.bought) {
-      const total = this.engine.pay(c.data.id, { fast: c.patience > c.maxPatience * 0.5 });
+      const total = this.engine.pay(c.data.id, { fast: c.patience > c.maxPatience * this.engine.fastThreshold() });
       if (total > 0) this._popup(c.x, c.y - 90, '+' + rupiah(total), '#ffd84d');
       this._leave(c, true);
     } else this._leave(c, false);

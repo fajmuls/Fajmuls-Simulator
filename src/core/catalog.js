@@ -60,7 +60,7 @@ export const CUSTOMER_TYPES = [
 
 // ---------- Reputasi dan bintang ----------
 export const STAR_THRESH = [0, 15, 35, 60, 85]; // reputasi minimum untuk bintang 1..5
-export const STAR_POINTS = [0, 1, 2, 4, 6]; // poin skill kumulatif dari bintang
+export const STAR_POINTS = [0, 2, 4, 7, 10]; // poin skill kumulatif dari bintang
 export const STAR_PERKS = [
   { stars: 1, title: 'Toko Baru', count: 1.0, disc: 0, wtp: 0, vip: 1, rent: 0, unlocks: [], text: ['Mulai dagang: Umpan, Pakan, dan Ikan'] },
   { stars: 2, title: 'Dikenal Warga', count: 1.06, disc: 0, wtp: 0, vip: 1, rent: 0, unlocks: ['Ramuan', 'Bank', 'Kasir', 'Pramuniaga'], text: ['+6% pelanggan', '+1 poin skill', 'Buka: Ramuan, Bank, Karyawan Kasir & Pramuniaga'] },
@@ -112,23 +112,46 @@ export const SKILL_BRANCHES = [
   { id: 'dagang', name: 'Dagang', icon: '💰' },
   { id: 'pemasaran', name: 'Pemasaran', icon: '📣' },
   { id: 'logistik', name: 'Logistik', icon: '📦' },
-  { id: 'peternakan', name: 'Peternakan', icon: '🐣' },
+  { id: 'pemain', name: 'Pemain', icon: '🏃' },
+  { id: 'pertanian', name: 'Kebun & Kolam', icon: '🌱' },
+  { id: 'peternakan', name: 'Peternakan & Pet', icon: '🐣' },
 ];
 export const SKILLS = [
-  { id: 'tawar', branch: 'dagang', name: 'Tawar-menawar', max: 3, req: null, desc: 'Diskon belanja grosir 3% per rank.' },
-  { id: 'harga_prima', branch: 'dagang', name: 'Mata Dagang', max: 3, req: 'tawar', desc: 'Pembeli rela bayar 4% lebih tinggi per rank.' },
-  { id: 'juragan', branch: 'dagang', name: 'Juragan Hemat', max: 3, req: 'harga_prima', desc: 'Sewa toko turun 8% per rank.' },
-  { id: 'promosi', branch: 'pemasaran', name: 'Promosi', max: 3, req: null, desc: 'Pelanggan +8% per rank.' },
-  { id: 'ramah', branch: 'pemasaran', name: 'Pelayanan Ramah', max: 3, req: 'promosi', desc: 'Reputasi naik 10% lebih cepat dan turun 10% lebih lambat per rank.' },
-  { id: 'vipmagnet', branch: 'pemasaran', name: 'Magnet VIP', max: 3, req: 'ramah', desc: 'Pelanggan VIP 20% lebih sering per rank.' },
-  { id: 'gudang', branch: 'logistik', name: 'Gudang Rapi', max: 3, req: null, desc: 'Kapasitas stok +10 per rank.' },
-  { id: 'kasir_cepat', branch: 'logistik', name: 'Kasir Gesit', max: 3, req: 'gudang', desc: 'Pembayaran 12% lebih cepat per rank.' },
+  // Dagang
+  { id: 'tawar', branch: 'dagang', name: 'Tawar-menawar', max: 8, req: null, desc: 'Diskon belanja grosir dan bibit 2,5% per rank.' },
+  { id: 'harga_prima', branch: 'dagang', name: 'Mata Dagang', max: 8, req: 'tawar', desc: 'Pembeli rela bayar 3% lebih tinggi per rank.' },
+  { id: 'lidah_emas', branch: 'dagang', name: 'Lidah Emas', max: 8, req: 'harga_prima', desc: 'Harga jual semua hewan +5% per rank (di atas batas pelanggan).' },
+  { id: 'tip_besar', branch: 'dagang', name: 'Senyum Bertip', max: 5, req: 'lidah_emas', desc: 'Tip pelayanan cepat +8% per rank.' },
+  { id: 'juragan', branch: 'dagang', name: 'Juragan Hemat', max: 5, req: 'harga_prima', desc: 'Sewa toko turun 10% per rank.' },
+  { id: 'akuntan', branch: 'dagang', name: 'Akuntan Teliti', max: 5, req: 'juragan', desc: 'Gaji karyawan turun 8% per rank.' },
+  // Pemasaran
+  { id: 'promosi', branch: 'pemasaran', name: 'Promosi', max: 8, req: null, desc: 'Pelanggan +8% per rank.' },
+  { id: 'ramah', branch: 'pemasaran', name: 'Pelayanan Ramah', max: 5, req: 'promosi', desc: 'Reputasi naik 12% lebih cepat dan turun 12% lebih lambat per rank.' },
+  { id: 'vipmagnet', branch: 'pemasaran', name: 'Magnet VIP', max: 8, req: 'ramah', desc: 'Pelanggan VIP 15% lebih sering per rank.' },
+  { id: 'sabar', branch: 'pemasaran', name: 'Suasana Nyaman', max: 5, req: 'promosi', desc: 'Pelanggan 8% lebih sabar menunggu per rank.' },
+  { id: 'viral', branch: 'pemasaran', name: 'Kabar Viral', max: 5, req: 'ramah', desc: 'Reputasi naik tambahan 10% per rank.' },
+  // Logistik
+  { id: 'gudang', branch: 'logistik', name: 'Gudang Rapi', max: 8, req: null, desc: 'Kapasitas stok +12 per rank.' },
+  { id: 'kasir_cepat', branch: 'logistik', name: 'Kasir Gesit', max: 5, req: 'gudang', desc: 'Pembayaran 12% lebih cepat per rank.' },
   { id: 'insting', branch: 'logistik', name: 'Insting Pasar', max: 1, req: 'kasir_cepat', desc: 'Lihat perkiraan harga grosir dan event besok.' },
+  // Pemain
+  { id: 'langkah', branch: 'pemain', name: 'Langkah Cepat', max: 10, req: null, desc: 'Karakter berjalan 10% lebih cepat per rank (di dalam Toko).' },
+  { id: 'sigap', branch: 'pemain', name: 'Tangan Sigap', max: 5, req: 'langkah', desc: 'Tip cepat masih didapat walau pelanggan sudah menunggu lebih lama (+8% per rank).' },
+  // Kebun & Kolam
+  { id: 'tumbuh_cepat', branch: 'pertanian', name: 'Tangan Dingin', max: 8, req: null, desc: 'Bibit tumbuh 4% lebih cepat per rank.' },
+  { id: 'bibit_murah', branch: 'pertanian', name: 'Pemburu Bibit', max: 5, req: 'tumbuh_cepat', desc: 'Harga bibit turun 4% per rank.' },
+  { id: 'panen_ganda', branch: 'pertanian', name: 'Panen Berkah', max: 6, req: 'tumbuh_cepat', desc: 'Tiap panen punya peluang +8% per rank untuk hewan bonus.' },
+  { id: 'mata_elang', branch: 'pertanian', name: 'Mata Elang', max: 6, req: 'panen_ganda', desc: 'Peluang rarity tinggi saat panen naik per rank.' },
+  { id: 'pakan_hemat', branch: 'pertanian', name: 'Pakan Hemat', max: 5, req: 'bibit_murah', desc: 'Harga pakan turun 6% per rank.' },
+  // Peternakan & Pet
   { id: 'breeder', branch: 'peternakan', name: 'Pengembang Biak', max: 1, req: null, desc: 'Buka kandang breeding (1 slot).' },
-  { id: 'bibit_unggul', branch: 'peternakan', name: 'Bibit Unggul', max: 3, req: 'breeder', desc: 'Peluang anakan naik kualitas +10% per rank.' },
-  { id: 'kandang_besar', branch: 'peternakan', name: 'Kandang Luas', max: 3, req: 'breeder', desc: 'Slot breeding +1 per rank.' },
+  { id: 'bibit_unggul', branch: 'peternakan', name: 'Bibit Unggul', max: 5, req: 'breeder', desc: 'Peluang anakan naik kualitas +8% per rank.' },
+  { id: 'kandang_besar', branch: 'peternakan', name: 'Kandang Luas', max: 5, req: 'breeder', desc: 'Slot breeding +1 per rank.' },
+  { id: 'pet_kuat', branch: 'peternakan', name: 'Pawang Hebat', max: 5, req: null, desc: 'Efek semua pet yang dipakai +12% per rank.' },
+  { id: 'slot_pet', branch: 'peternakan', name: 'Teman Setia', max: 3, req: 'pet_kuat', desc: 'Slot pet aktif +1 per rank.' },
 ];
-export const SKILL_POINT_EVERY_DAYS = 10;
+export const SKILL_POINT_EVERY_DAYS = 3; // satu poin tiap 3 hari bermain
+export const SKILL_POINT_EVERY_QUESTS = 3; // satu poin tiap 3 misi selesai
 
 // ---------- Ramuan ----------
 export const POTIONS = [
@@ -191,14 +214,18 @@ export const BREED_BASE_SLOTS = 1;
 
 // ---------- Event harian ----------
 export const EVENTS = [
-  { id: 'cerah', name: 'Hari Cerah', icon: '☀️', weight: 45, count: 1, wholesale: 1, wtp: 0, vip: 1, desc: 'Hari biasa.' },
-  { id: 'hujan', name: 'Hujan Deras', icon: '🌧️', weight: 15, count: 0.7, wholesale: 1, wtp: 0, vip: 1, desc: 'Pelanggan -30%.' },
-  { id: 'festival', name: 'Festival Pasar', icon: '🎉', weight: 12, count: 1.4, wholesale: 1, wtp: 0, vip: 1, desc: 'Pelanggan +40%.' },
-  { id: 'murah', name: 'Pasar Murah Grosir', icon: '🏷️', weight: 10, count: 1, wholesale: 0.88, wtp: 0, vip: 1, desc: 'Harga grosir -12%.' },
-  { id: 'kolektor', name: 'Kolektor Datang', icon: '🧐', weight: 10, count: 1, wholesale: 1, wtp: 0.05, vip: 2, desc: 'VIP 2x lebih sering dan bayar +5%.' },
-  { id: 'sepi', name: 'Hari Sepi', icon: '😴', weight: 8, count: 0.8, wholesale: 1, wtp: 0, vip: 1, desc: 'Pelanggan -20%.' },
-  { id: 'bintang', name: 'Malam Bintang', icon: '🌠', weight: 8, count: 1, wholesale: 1, wtp: 0, vip: 1, luck: 3, desc: 'Peluang rarity panen naik besar hari ini.' },
-  { id: 'angin', name: 'Angin Segar', icon: '🍃', weight: 8, count: 1, wholesale: 1, wtp: 0, vip: 1, grow: 0.25, desc: 'Semua bibit tumbuh 25% lebih cepat.' },
+  { id: 'cerah', name: 'Hari Cerah', icon: '☀️', weight: 40, count: 1, wholesale: 1, wtp: 0, vip: 1, desc: 'Hari biasa.' },
+  { id: 'hujan', name: 'Hujan Deras', icon: '🌧️', weight: 13, count: 0.7, wholesale: 1, wtp: 0, vip: 1, desc: 'Pelanggan -30%.' },
+  { id: 'festival', name: 'Festival Pasar', icon: '🎉', weight: 10, count: 1.4, wholesale: 1, wtp: 0, vip: 1, desc: 'Pelanggan +40%.' },
+  { id: 'murah', name: 'Pasar Murah Grosir', icon: '🏷️', weight: 9, count: 1, wholesale: 0.88, wtp: 0, vip: 1, desc: 'Harga grosir dan bibit -12%.' },
+  { id: 'kolektor', name: 'Kolektor Datang', icon: '🧐', weight: 9, count: 1, wholesale: 1, wtp: 0.05, vip: 2, desc: 'VIP 2x lebih sering dan bayar +5%.' },
+  { id: 'sepi', name: 'Hari Sepi', icon: '😴', weight: 6, count: 0.8, wholesale: 1, wtp: 0, vip: 1, desc: 'Pelanggan -20%.' },
+  { id: 'bintang', name: 'Malam Bintang', icon: '🌠', weight: 7, count: 1, wholesale: 1, wtp: 0, vip: 1, luck: 3, desc: 'Peluang rarity panen naik besar hari ini.' },
+  { id: 'angin', name: 'Angin Segar', icon: '🍃', weight: 7, count: 1, wholesale: 1, wtp: 0, vip: 1, grow: 0.25, desc: 'Semua bibit tumbuh 25% lebih cepat.' },
+  { id: 'malam', name: 'Pasar Malam', icon: '🏮', weight: 8, count: 1.25, wholesale: 1, wtp: 0, vip: 1, tip: 0.15, desc: 'Pelanggan +25% dan tip lebih besar (+15%).' },
+  { id: 'lomba', name: 'Lomba Hewan', icon: '🏆', weight: 7, count: 1, wholesale: 1, wtp: 0, vip: 1, rare: 0.3, desc: 'Hewan Rare ke atas dibayar +30%.' },
+  { id: 'libur', name: 'Hari Libur', icon: '🏖️', weight: 7, count: 1.6, wholesale: 1, wtp: 0, vip: 1, patience: -0.3, desc: 'Pelanggan +60%, tapi mereka kurang sabar (-30%).' },
+  { id: 'subur', name: 'Musim Subur', icon: '🌾', weight: 7, count: 1, wholesale: 1, wtp: 0, vip: 1, bonus: 1, desc: 'Tiap panen dapat 1 hewan bonus.' },
 ];
 
 // ---------- Fungsi bantu ----------

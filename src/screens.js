@@ -87,19 +87,20 @@ P.openSkill = function openSkill() {
     const e = this.e;
     const out = [h('div', { class: 'card' },
       h('div', { class: 'card-top' }, h('b', {}, 'Poin skill'), h('span', { class: 'price' }, `${e.skillPointsFree()} bebas / ${e.skillPointsTotal()} total`)),
-      h('div', { class: 'sub' }, 'Poin dari bintang, level toko, dan tiap 10 hari bermain.'),
+      h('div', { class: 'sub' }, 'Poin didapat dari: tiap 3 hari bermain, tiap 3 misi selesai, bintang, level toko, dan bab cerita.'),
       h('button', { class: 'btn secondary small', disabled: e.skillPointsSpent() === 0 || e.state.phase === 'open', onClick: () => { if (confirm('Reset semua skill? Poin dikembalikan.')) this.act(() => e.resetSkills(), 'Skill di-reset'); } }, '↺ Reset skill (gratis)'))];
-    for (const br of SKILL_BRANCHES) {
-      out.push(h('div', { class: 'sub', style: 'font-weight:700;margin-top:4px' }, `${br.icon} ${br.name}`));
-      for (const sk of SKILLS.filter((x) => x.branch === br.id)) {
-        const rank = e.skillRank(sk.id);
-        const why = e.canLearn(sk.id);
-        out.push(h('div', { class: 'card' },
-          h('div', { class: 'card-top' }, h('b', {}, sk.name), h('span', { class: 'badge' }, `${rank}/${sk.max}`)),
-          h('div', { class: 'sub' }, sk.desc),
-          sk.req ? h('div', { class: 'sub' }, `Syarat: ${getSkill(sk.req).name}`) : null,
-          h('button', { class: 'btn small', disabled: !!why, onClick: () => this.act(() => e.learnSkill(sk.id), `${sk.name} naik`) }, why ? why : 'Pelajari (1 poin)')));
-      }
+    this.skillBranch ||= SKILL_BRANCHES[0].id;
+    const used = (br) => SKILLS.filter((x) => x.branch === br.id).reduce((n, x) => n + e.skillRank(x.id), 0);
+    out.push(this.chips(SKILL_BRANCHES.map((br) => ({ id: br.id, label: `${br.icon} ${br.name}${used(br) ? ` (${used(br)})` : ''}` })), this.skillBranch, (id) => { this.skillBranch = id; this.rerender(); }));
+    for (const sk of SKILLS.filter((x) => x.branch === this.skillBranch)) {
+      const rank = e.skillRank(sk.id);
+      const why = e.canLearn(sk.id);
+      out.push(h('div', { class: 'card' },
+        h('div', { class: 'card-top' }, h('b', {}, sk.name), h('span', { class: 'badge' }, `${rank}/${sk.max}`)),
+        h('div', { class: 'meter' }, h('i', { style: `width:${(rank / sk.max) * 100}%` })),
+        h('div', { class: 'sub' }, sk.desc),
+        sk.req ? h('div', { class: 'sub' }, `Syarat: ${getSkill(sk.req).name}`) : null,
+        h('button', { class: 'btn small', disabled: !!why, onClick: () => this.act(() => e.learnSkill(sk.id), `${sk.name} naik`) }, why ? why : 'Pelajari (1 poin)')));
     }
     return out;
   });

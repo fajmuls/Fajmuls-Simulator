@@ -83,13 +83,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #modal-root { position: fixed; inset: 0; pointer-events: none; z-index: 30; }
 .overlay { position: fixed; inset: 0; background: #3b2a1c88; display: flex; align-items: flex-end; justify-content: center; pointer-events: auto; }
 .sheet {
-  width: 100%; max-width: 620px; height: min(86dvh, 720px); background: var(--panel); border-radius: 22px 22px 0 0;
+  width: 100%; max-width: 620px; max-height: min(88dvh, 760px); background: var(--panel); border-radius: 22px 22px 0 0;
   border: 3px solid var(--line); border-bottom: 0; display: flex; flex-direction: column; animation: up 0.2s ease-out; overflow: hidden;
 }
 @keyframes up { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 3px solid var(--line); background: var(--panel-2); flex: none; }
 .sheet-head h2 { margin: 0; font-size: 18px; font-weight: 900; }
-.sheet-body { flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 10px 12px; display: grid; gap: 10px; align-content: start; }
+.sheet-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 10px 12px 18px; display: grid; gap: 10px; align-content: start; }
 .sheet-body > * { flex-shrink: 0; }
 .x { background: var(--panel-3); border: 2.5px solid var(--line); border-radius: 50%; width: 34px; height: 34px; font-size: 16px; font-weight: 900; padding: 0; box-shadow: 0 2px 0 var(--line); }
 .pager { flex: none; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 7px 12px 9px; border-top: 3px solid var(--line); background: var(--panel-2); }
@@ -221,3 +221,6 @@ html.contrast { --bg: #fff; --panel: #fff; --panel-2: #f1e7d1; --muted: #2b1d12;
 
 .stepper button { width: 36px; height: 36px; }
 .stepper .qbtn { width: auto; min-width: 48px; }
+
+.chips.sticky { position: sticky; top: -10px; z-index: 3; background: var(--panel); margin: -10px -12px 0; padding: 8px 12px 6px; border-bottom: 2px solid #3b2a1c22; }
+.pager { display: none !important; }

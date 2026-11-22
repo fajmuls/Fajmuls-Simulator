@@ -112,7 +112,7 @@ export function validateState(s) {
   }
   if (!s.story || !nonNeg(s.story.ch) || typeof s.story.done !== 'boolean') p.push('Cerita rusak');
   const pt = s.pets;
-  if (!pt || !Array.isArray(pt.owned) || !Array.isArray(pt.equipped) || !nonNeg(pt.nextId) || !nonNeg(pt.rolls)) p.push('Pet rusak');
+  if (!pt || !Array.isArray(pt.owned) || !Array.isArray(pt.equipped) || !nonNeg(pt.nextId) || !nonNeg(pt.rolls) || (pt.book !== undefined && (typeof pt.book !== 'object' || pt.book === null))) p.push('Pet rusak');
   return p;
 }
 

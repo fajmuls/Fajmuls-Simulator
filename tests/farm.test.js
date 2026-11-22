@@ -120,7 +120,7 @@ describe('peternakan', () => {
     old.v = 5; delete old.farm.habs; delete old.story;
     old.farm.slots = [null, { itemId: 'lele', feed: null, plantedAt: 1, readyAt: 2, cost: 5 }, null, null];
     const m = migrate(old);
-    expect(m.v).toBe(6);
+    expect(m.v).toBe(7);
     expect(m.farm.habs.length).toBe(4);
     expect(m.farm.habs[1]).toBe('kolam');
     expect(m.story.ch).toBe(0);
@@ -264,5 +264,25 @@ describe('pengepul dan karyawan', () => {
     expect(b.patience).toBeGreaterThan(b0.patience);
     expect(b.grow).toBeGreaterThan(b0.grow);
     expect(b.tip).toBeGreaterThan(b0.tip);
+  });
+});
+
+describe('inventori pet', () => {
+  it('pet dijual tetap tercatat di buku koleksi dan migrasi v6 membuatnya', async () => {
+    const { e } = mk(5);
+    e.state.ledger.balance = 1e12;
+    const p = e.hatch('telur');
+    expect(e.state.pets.book[p.kind][p.rarity]).toBe(1);
+    e.equipPet(p.id);
+    e.unequipPet(p.id);
+    expect(e.state.pets.owned.length).toBe(1); // lepas dari slot tidak menghapus
+    e.sellPet(p.id);
+    expect(e.state.pets.owned.length).toBe(0);
+    expect(e.state.pets.book[p.kind][p.rarity]).toBe(1);
+    const old = JSON.parse(JSON.stringify(e.state));
+    old.v = 6; delete old.pets.book; old.pets.owned.push({ id: 9, kind: 'hoki', rarity: 'rare' });
+    const m = migrate(old);
+    expect(m.v).toBe(7);
+    expect(m.pets.book.hoki.rare).toBe(1);
   });
 });
