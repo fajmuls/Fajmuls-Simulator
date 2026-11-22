@@ -2,7 +2,7 @@ import {
   CATEGORIES, ITEMS, CUSTOMER_TYPES, UPGRADES, QUALITIES, SKILLS, POTIONS, STAFF, SHARES, PROPERTIES, EVENTS,
   SHOP_LEVELS, STAR_THRESH, STAR_POINTS, STAR_PERKS, DEPOSIT_TERMS, DEPOSIT_MIN, DEPOSIT_MAX_ACTIVE,
   SHARE_MIN_PRICE, SHARE_SELL_FEE, SHARE_HISTORY, PROPERTY_SELL_RATE, LOAN_TERMS, LOAN_MIN, LOAN_STEP,
-  LOAN_MAX_ACTIVE, LOAN_LATE_FEE, BREED_FEE_RATE, BREED_BASE_SLOTS, SKILL_POINT_EVERY_DAYS, SKILL_POINT_EVERY_QUESTS,
+  LOAN_MAX_ACTIVE, LOAN_LATE_FEE, BREED_FEE_RATE, BREED_BASE_SLOTS, SKILL_POINT_EVERY_DAYS, SKILL_POINT_EVERY_FULL_DAYS,
   BASE_CAPACITY, CAPACITY_PER_RAK, BASE_MAX_QUALITY, START_CASH, DAILY_RENT,
   SPEED_STEPS, UPKEEP_PER_ANIMAL, UPKEEP_SHOP_STEP, SICK_CHANCE, THEFT_CHANCE, TAX_BRACKETS, WEALTH_TAX_FROM, WEALTH_TAX_RATE,
   getItem, getCategory, getQuality, getUpgrade, getSkill, getPotion, getStaff, getShare, getProperty,
@@ -16,7 +16,7 @@ import { planRegulars, onRegularPaid, maxBondLevel, claimRegular } from './regul
 import { ensureQuests, trackQuests, claimQuest, checkAchievements, claimAchievement } from './goals.js';
 
 export const DAY_LENGTH_SEC = 90; // lama jendela pelanggan datang pada kecepatan 1x
-export const STATE_VERSION = 7;
+export const STATE_VERSION = 8;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -89,7 +89,8 @@ export function migrate(input) {
   if (input.v === 3) return migrate(migrateV3(input));
   if (input.v === 4) return migrate(migrateV4(input));
   if (input.v === 5) return migrate(migrateV5(input));
-  if (input.v === 6) return migrateV6(input);
+  if (input.v === 6) return migrate(migrateV6(input));
+  if (input.v === 7) return migrateV7(input);
   return input;
 }
 
@@ -118,6 +119,20 @@ function migrateV3(input) {
 }
 
 // v5 -> v6: habitat di peta, cerita, statistik peternakan.
+// v7 -> v8: lahan berlevel dengan daftar penghuni (lots). Satu isi lama menjadi satu penghuni.
+function migrateV7(input) {
+  const s = structuredClone(input);
+  s.v = 8;
+  const fm = s.farm;
+  if (Array.isArray(fm.levels) && fm.slots.every((x) => Array.isArray(x))) return s; // sudah format baru
+  fm.levels = fm.slots.map((x) => {
+    const q = x && !Array.isArray(x) ? (x.qty || 1) : 0;
+    return q > 4 ? 3 : q > 2 ? 2 : 1;
+  });
+  fm.slots = fm.slots.map((x) => (Array.isArray(x) ? x : x ? [x] : []));
+  return s;
+}
+
 // v6 -> v7: buku koleksi pet (pet yang sudah dimiliki dicatat).
 function migrateV6(input) {
   const s = structuredClone(input);
@@ -137,7 +152,7 @@ function migrateV5(input) {
   const want = (h) => ({ kolam: 4, kebun: 2, kandang: 5 }[h]);
   fm.habs = fm.slots.map((slot, i) => {
     let h = cycle[i % cycle.length];
-    if (slot) h = farm.habitatOf(slot.itemId).id;
+    if (slot && slot.itemId) h = farm.habitatOf(slot.itemId).id;
     count[h] = (count[h] || 0) + 1;
     return h;
   });
@@ -240,8 +255,11 @@ export class GameEngine {
   claimStory() { return story.claimStory(this); }
   markStoryIntro() { story.markIntro(this); }
   plant(slot, itemId, feedId, qty = 1) { return farm.plant(this, slot, itemId, feedId, qty); }
-  slotProgress(slot) { return farm.slotProgress(this, slot); }
-  harvest(slot) { return farm.harvest(this, slot); }
+  slotProgress(slot, k = 0) { return farm.slotProgress(this, slot, k); }
+  harvest(slot, k = 0) { return farm.harvest(this, slot, k); }
+  upgradeSpot(slot) { return farm.upgradeSpot(this, slot); }
+  spotReady(slot) { return farm.spotReady(this, slot); }
+  harvestSpot(slot) { return farm.harvestSpot(this, slot); }
   harvestAll() { return farm.harvestAll(this); }
   animalCount(itemId) { return farm.animalCount(this, itemId); }
   dealerSell(id) { return farm.dealerSell(this, id); }
@@ -300,7 +318,7 @@ export class GameEngine {
     const wtp = P.wtp + 0.03 * sk('harga_prima') + (bf('hartawan') ? 0.15 : 0) + ev.wtp;
     const vip = P.vip * (1 + 0.15 * sk('vipmagnet')) * (bf('vip') ? 2 : 1) * ev.vip;
     const rentCut = Math.min(0.6, P.rent + 0.1 * sk('juragan'));
-    const rentBase = Math.round(DAILY_RENT * (1 + 0.5 * (s.shopLevel - 1)));
+    const rentBase = Math.round(DAILY_RENT * (1 + 0.6 * (s.shopLevel - 1)) * (1 + 0.25 * (s.stars - 1)));
     const rent = Math.max(0, Math.round(rentBase * (1 - rentCut)));
     const repGain = (1 + 0.12 * sk('ramah') + 0.1 * sk('viral') + (bf('sahabat') ? 0.5 : 0)) * (hasStaff('satpam') ? 1.1 : 1);
     const repLoss = Math.max(0.1, 1 - 0.12 * sk('ramah') - (bf('sahabat') ? 0.5 : 0));
@@ -309,10 +327,15 @@ export class GameEngine {
     return { count, disc, wtp, vip, rent, repGain, repLoss, payTime, payMul, event: ev };
   }
 
-  wages() {
+  wageOf(st) {
     const cut = Math.min(0.6, 0.08 * (this.state.skills.akuntan || 0));
-    return Math.round(STAFF.reduce((sum, st) => sum + (this.state.staff[st.id] ? st.wage : 0), 0) * (1 - cut));
+    return Math.round(st.wage * 1.5 * (1 - cut));
   }
+
+  wages() {
+    return STAFF.reduce((sum, st) => sum + (this.state.staff[st.id] ? this.wageOf(st) : 0), 0);
+  }
+
 
   loanDue() {
     return this.state.loans.reduce((sum, l) => sum + (l.daysLeft > 0 ? Math.min(l.perDay, l.remaining) : l.remaining), 0);
@@ -460,7 +483,7 @@ export class GameEngine {
   skillPointsTotal() {
     const s = this.state;
     return STAR_POINTS[s.stars - 1] + 2 * (s.shopLevel - 1) + Math.floor((s.day - 1) / SKILL_POINT_EVERY_DAYS)
-      + Math.floor((s.stats.questsDone || 0) / SKILL_POINT_EVERY_QUESTS) + (s.bonusPoints || 0);
+      + Math.floor((s.stats.dailyFull || 0) / SKILL_POINT_EVERY_FULL_DAYS) + (s.stats.weeklyFull || 0) + (s.bonusPoints || 0);
   }
 
   skillPointsSpent() {
@@ -1154,10 +1177,11 @@ export class GameEngine {
     let wagesPaid = 0;
     for (const st of STAFF) {
       if (!s.staff[st.id]) continue;
-      wagesDue += st.wage;
-      const paid = this._payUpTo('wage', st.wage, `Gaji ${st.name}`);
+      const w = this.wageOf(st);
+      wagesDue += w;
+      const paid = this._payUpTo('wage', w, `Gaji ${st.name}`);
       wagesPaid += paid;
-      s.arrears += st.wage - paid;
+      s.arrears += w - paid;
     }
     const upkeepDue = this.upkeep();
     const upkeepPaid = this._payUpTo('upkeep', upkeepDue, 'Perawatan hewan dan toko');

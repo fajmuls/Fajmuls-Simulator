@@ -32,8 +32,8 @@ export const getFeed = (id) => {
 
 // detik tumbuh per tier (pada tanpa pakan)
 export const GROW_SEC = [45, 70, 100, 140, 200];
-export const BIBIT_RATE = 0.2; // harga bibit = 20% harga jual dasar
-export const SLOT_COSTS = [0, 0, 0, 4000, 10000, 25000, 60000, 140000, 300000, 500000, 800000];
+export const BIBIT_RATE = 0.55; // harga bibit = 55% harga jual dasar
+export const SLOT_COSTS = [0, 0, 0, 6000, 15000, 38000, 90000, 210000, 450000, 750000, 1200000];
 export const MAX_SLOTS = SLOT_COSTS.length;
 export const START_SLOTS = 3;
 
@@ -44,6 +44,10 @@ export const HABITATS = [
   { id: 'kandang', name: 'Kandang Satwa', one: 'Kandang', cats: ['burung', 'reptil', 'kecil'], max: 5, cap: 5 },
 ];
 export const START_HABS = ['kebun', 'kolam', 'kolam'];
+// Tiap lahan punya level: makin tinggi makin banyak ekor yang muat (dalam beberapa penghuni berbeda).
+export const HAB_LEVEL_CAPS = [2, 4, 6];
+export const SPOT_UPGRADE_COSTS = { kolam: [10000, 40000], kebun: [6000, 25000], kandang: [15000, 55000] };
+export const MAX_SPOT_LEVEL = HAB_LEVEL_CAPS.length;
 export const getHabitat = (id) => HABITATS.find((h) => h.id === id);
 export const habitatOf = (itemId) => HABITATS.find((h) => h.cats.includes(getItem(itemId).cat));
 export const slotsOfHab = (e, hab) => farmOf(e).habs.map((h, i) => (h === hab ? i : -1)).filter((i) => i >= 0);
@@ -195,23 +199,44 @@ export function buySlot(e, hab = null) {
   if (!room(h)) throw new Error(`${h.name} sudah penuh`);
   const cost = SLOT_COSTS[fm.slots.length];
   if (cost > 0) debit(e.state.ledger, e.state.day, 'upgrade', cost, `${h.one} baru di ${h.name}`);
-  fm.slots.push(null);
+  fm.slots.push([]);
   fm.habs.push(h.id);
+  fm.levels.push(1);
   return cost;
 }
 
-export const slotQty = (s) => (s && s.qty) || 1;
-export const slotCap = (e, slot) => getHabitat(farmOf(e).habs[slot]).cap;
+export const slotQty = (lot) => (lot && lot.qty) || 1; // jumlah ekor satu penghuni
+export const spotLevel = (e, i) => farmOf(e).levels[i] || 1;
+export const slotCap = (e, i) => HAB_LEVEL_CAPS[spotLevel(e, i) - 1];
+export const spotLots = (e, i) => farmOf(e).slots[i] || [];
+export const spotUsed = (e, i) => spotLots(e, i).reduce((n, l) => n + slotQty(l), 0);
+export const spotFree = (e, i) => Math.max(0, slotCap(e, i) - spotUsed(e, i));
+export const spotUpgradeCost = (e, i) => {
+  const lv = spotLevel(e, i);
+  if (lv >= MAX_SPOT_LEVEL) return null;
+  return SPOT_UPGRADE_COSTS[farmOf(e).habs[i]][lv - 1];
+};
+
+export function upgradeSpot(e, i) {
+  const fm = farmOf(e);
+  if (!Number.isInteger(i) || i < 0 || i >= fm.slots.length) throw new Error('Lahan tidak valid');
+  const cost = spotUpgradeCost(e, i);
+  if (cost === null) throw new Error('Level lahan sudah maksimum');
+  const h = getHabitat(fm.habs[i]);
+  debit(e.state.ledger, e.state.day, 'upgrade', cost, `Upgrade ${h.one} jadi Lv ${spotLevel(e, i) + 1}`);
+  fm.levels[i] = spotLevel(e, i) + 1;
+  return cost;
+}
 
 export function plant(e, slot, itemId, feedId = null, qty = 1) {
   const fm = farmOf(e);
-  if (!Number.isInteger(slot) || slot < 0 || slot >= fm.slots.length) throw new Error('Kolam tidak valid');
-  if (fm.slots[slot]) throw new Error('Kolam masih terisi');
+  if (!Number.isInteger(slot) || slot < 0 || slot >= fm.slots.length) throw new Error('Lahan tidak valid');
   getItem(itemId);
   if (!e.isUnlocked(itemId)) throw new Error('Spesies belum terbuka');
   if (habitatOf(itemId).id !== fm.habs[slot]) throw new Error(`${getItem(itemId).name} tidak cocok di ${getHabitat(fm.habs[slot]).name}`);
   if (!Number.isInteger(qty) || qty < 1) throw new Error('Jumlah tidak valid');
-  if (qty > slotCap(e, slot)) throw new Error(`Muat maksimal ${slotCap(e, slot)} sekaligus`);
+  if (spotFree(e, slot) === 0) throw new Error('Lahan penuh, upgrade atau panen dulu');
+  if (qty > spotFree(e, slot)) throw new Error(`Sisa tempat ${spotFree(e, slot)} ekor`);
   if (feedId) {
     getFeed(feedId);
     if ((fm.feeds[feedId] || 0) < qty) throw new Error('Pakan kurang, beli di Pasar');
@@ -225,27 +250,28 @@ export function plant(e, slot, itemId, feedId = null, qty = 1) {
     if (fm.feeds[feedId] === 0) delete fm.feeds[feedId];
   }
   const now = e.now();
-  fm.slots[slot] = {
+  const lot = {
     itemId, feed: feedId, plantedAt: now, readyAt: now + growMs(e, itemId, feedId), qty,
     cost: price + (feedId ? feedPrice(e, feedId) : 0),
   };
+  (fm.slots[slot] ||= []).push(lot);
   e.state.stats.planted = (e.state.stats.planted || 0) + qty;
   e.track('plant', qty);
-  return fm.slots[slot];
+  return lot;
 }
 
-export function slotProgress(e, slot) {
-  const s = farmOf(e).slots[slot];
+export function slotProgress(e, slot, k = 0) {
+  const s = spotLots(e, slot)[k];
   if (!s) return null;
   const total = s.readyAt - s.plantedAt;
   const done = Math.min(total, Math.max(0, e.now() - s.plantedAt));
   return { pct: total > 0 ? done / total : 1, remainMs: Math.max(0, s.readyAt - e.now()), ready: e.now() >= s.readyAt };
 }
 
-export function harvest(e, slot) {
+export function harvest(e, slot, k = 0) {
   const fm = farmOf(e);
-  const s = fm.slots[slot];
-  if (!s) throw new Error('Kolam kosong');
+  const s = (fm.slots[slot] || [])[k];
+  if (!s) throw new Error('Penghuni tidak ada');
   if (e.now() < s.readyAt) throw new Error('Belum waktunya panen');
   const feed = s.feed ? getFeed(s.feed) : null;
   const luck = (feed ? feed.luck : 0) + farmBuffs(e).luck * 10 + (e.eventOf().luck || 0);
@@ -271,15 +297,28 @@ export function harvest(e, slot) {
     e.state.stats.bred += 1;
     e.state.stats.bestRar = Math.max(e.state.stats.bestRar || 0, r);
   }
-  fm.slots[slot] = null;
+  fm.slots[slot].splice(k, 1);
   e.track('harvest', n);
+  return out;
+}
+
+export const spotReady = (e, i) => spotLots(e, i).filter((l) => e.now() >= l.readyAt).length;
+
+// Panen semua penghuni yang sudah siap di satu lahan.
+export function harvestSpot(e, i) {
+  const out = [];
+  const lots = spotLots(e, i);
+  for (let k = lots.length - 1; k >= 0; k--) if (e.now() >= lots[k].readyAt) out.push(...harvest(e, i, k));
+  if (!out.length) throw new Error('Belum ada yang siap panen');
   return out;
 }
 
 export function harvestAll(e) {
   const out = [];
-  fmSlots(e).forEach((s, i) => {
-    if (s && e.now() >= s.readyAt) out.push(...harvest(e, i));
+  farmOf(e).slots.forEach((lots, i) => {
+    for (let k = (lots || []).length - 1; k >= 0; k--) {
+      if (e.now() >= lots[k].readyAt) out.push(...harvest(e, i, k));
+    }
   });
   return out;
 }
@@ -363,8 +402,9 @@ export function releasePet(e, petId) {
 }
 
 export const newFarm = () => ({
-  slots: Array.from({ length: START_SLOTS }, () => null),
+  slots: Array.from({ length: START_SLOTS }, () => []),
   habs: [...START_HABS],
+  levels: Array.from({ length: START_SLOTS }, () => 1),
   animals: [], feeds: {}, bibit: {}, nextAnimal: 1, rolls: 0, book: {},
 });
 export const newPets = () => ({ owned: [], equipped: [], nextId: 1, rolls: 0, book: {} });

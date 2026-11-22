@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { CATEGORIES, ITEMS, STAFF, getItem } from '../core/catalog.js';
-import { RARITIES, HABITATS, SLOT_COSTS, MAX_SLOTS, getHabitat } from '../core/farm.js';
+import { RARITIES, HABITATS, HAB_LEVEL_CAPS, SLOT_COSTS, MAX_SLOTS, getHabitat } from '../core/farm.js';
 import { animalSVG, staffSVG, petSVG, svgUri } from '../art.svg.js';
 import * as A from '../art.world.js';
 import { DAY_LENGTH_SEC } from '../core/engine.js';
@@ -342,7 +342,7 @@ export class WorldScene extends Phaser.Scene {
     const e = this.engine;
     const fm = e.state.farm;
     // pertahankan sprite bila struktur tidak berubah
-    const sig = fm.habs.join(',') + '|' + fm.slots.map((s) => (s ? `${s.itemId}x${s.qty || 1}` : '-')).join(',') + '|' + e.state.ledger.balance / 1e12;
+    const sig = fm.habs.join(',') + '|' + fm.slots.map((lots, i) => `${fm.levels[i]}:${(lots || []).map((s) => `${s.itemId}x${s.qty || 1}`).join('+')}`).join(',') + '|' + e.state.ledger.balance / 1e12;
     if (sig === this._plotSig && this.plots.length) return;
     this._plotSig = sig;
     this._clearPlots();
@@ -366,17 +366,19 @@ export class WorldScene extends Phaser.Scene {
           const tex = hab.id === 'kolam' ? 'pond' : hab.id === 'kebun' ? 'bed' : 'cage';
           const base = this.add.image(x, y, tex).setDisplaySize(w, h).setDepth(y - 6);
           plot.objs.push(base);
-          const s = fm.slots[plot.slot];
-          if (s) {
-            const n = Math.min(s.qty || 1, 8);
-            plot.occs = Array.from({ length: n }, () => this.add.image(x, y, `icon_${s.itemId}`).setDepth(y + 2));
-            plot.occ = plot.occs[0];
-            plot.n = n;
-            plot.bar = this.add.graphics().setDepth(y + 30);
-            plot.mark = this.add.image(x + w / 2 - 14, y - h / 2 + 6, 'exclaim').setDisplaySize(22, 28).setDepth(y + 40).setVisible(false);
-            plot.objs.push(...plot.occs, plot.bar, plot.mark);
-            if ((s.qty || 1) > 1) plot.objs.push(T(this, x - w / 2 + 16, y - h / 2 + 10, `×${s.qty}`, 12, '#ffffff', { stroke: '#3b2a1c', strokeThickness: 3 }).setDepth(y + 35));
-          } else {
+          const lots = fm.slots[plot.slot] || [];
+          const used = lots.reduce((n, l) => n + (l.qty || 1), 0);
+          const cap = HAB_LEVEL_CAPS[(fm.levels[plot.slot] || 1) - 1];
+          plot.lotOf = [];
+          const flat = [];
+          lots.forEach((l, li) => { for (let q = 0; q < (l.qty || 1) && flat.length < 8; q++) flat.push({ li, itemId: l.itemId }); });
+          plot.occs = flat.map((f) => this.add.image(x, y, `icon_${f.itemId}`).setDepth(y + 2));
+          plot.lotOf = flat.map((f) => f.li);
+          plot.bar = this.add.graphics().setDepth(y + 30);
+          plot.mark = this.add.image(x + w / 2 - 14, y - h / 2 + 6, 'exclaim').setDisplaySize(22, 28).setDepth(y + 40).setVisible(false);
+          plot.objs.push(...plot.occs, plot.bar, plot.mark);
+          plot.objs.push(T(this, x - w / 2 + 18, y - h / 2 + 10, `Lv${fm.levels[plot.slot] || 1} · ${used}/${cap}`, 11, '#ffffff', { stroke: '#3b2a1c', strokeThickness: 3 }).setDepth(y + 35));
+          if (!lots.length) {
             const t = T(this, x, y + h / 2 - 8, 'kosong', 11, '#3b2a1c').setDepth(y + 4).setAlpha(0.55);
             plot.objs.push(t);
           }
@@ -390,14 +392,15 @@ export class WorldScene extends Phaser.Scene {
   _updatePlots(time, force = false) {
     const e = this.engine;
     for (const p of this.plots) {
-      if (p.slot === null || !p.occs) continue;
-      const pr = e.slotProgress(p.slot);
-      if (!pr) continue;
-      const slot = e.state.farm.slots[p.slot];
-      const grow = 0.34 + 0.66 * pr.pct;
+      if (p.slot === null || !p.occs || !p.occs.length) continue;
+      const prs = (e.state.farm.slots[p.slot] || []).map((_, li) => e.slotProgress(p.slot, li));
+      if (!prs.length || prs.some((x) => !x)) continue;
+      const anyReady = prs.some((x) => x.ready);
       const many = p.occs.length;
-      const size = (many > 3 ? 28 : many > 1 ? 34 : 40) * grow;
       p.occs.forEach((occ, idx) => {
+        const pr = prs[p.lotOf[idx]] || prs[0];
+        const grow = 0.34 + 0.66 * pr.pct;
+        const size = (many > 3 ? 28 : many > 1 ? 34 : 40) * grow;
         occ.setDisplaySize(size, size);
         const t = time / 1000 + p.k * 1.7 + idx * 2.3;
         if (p.hab === 'kolam') {
@@ -413,22 +416,23 @@ export class WorldScene extends Phaser.Scene {
         }
         if (pr.ready) occ.setScale(occ.scaleX * (1 + Math.sin(time / 180 + idx) * 0.06), occ.scaleY * (1 + Math.sin(time / 180 + idx) * 0.06));
       });
-      p.mark.setVisible(pr.ready);
-      if (pr.ready) p.mark.y = p.y - p.h / 2 + 6 + Math.sin(time / 160) * 3;
-      // bilah kemajuan (diperbarui seperempat detik sekali)
+      p.mark.setVisible(anyReady);
+      if (anyReady) p.mark.y = p.y - p.h / 2 + 6 + Math.sin(time / 160) * 3;
+      // bilah kemajuan: penghuni yang paling dekat siap (diperbarui seperempat detik sekali)
       if (force || time - (p.barT || 0) > 250) {
         p.barT = time;
+        const pr = anyReady ? prs.find((x) => x.ready) : prs.slice().sort((x, y) => x.remainMs - y.remainMs)[0];
         const bw = Math.min(64, p.w * 0.55);
         const bx = p.x - bw / 2;
         const by = p.y + p.h / 2 - 2;
         p.bar.clear();
         p.bar.fillStyle(0x3b2a1c, 1).fillRoundedRect(bx - 2, by - 2, bw + 4, 9, 4);
-        p.bar.fillStyle(pr.ready ? 0x58b368 : 0xffb938, 1).fillRoundedRect(bx, by, Math.max(2, bw * pr.pct), 5, 2.5);
-        if (!pr.ready) {
+        p.bar.fillStyle(anyReady ? 0x58b368 : 0xffb938, 1).fillRoundedRect(bx, by, Math.max(2, bw * pr.pct), 5, 2.5);
+        if (!anyReady) {
           const s = Math.ceil(pr.remainMs / 1000);
           if (!p.timer) { p.timer = T(this, p.x, by + 14, '', 10, '#3b2a1c').setDepth(p.y + 31); p.objs.push(p.timer); }
           p.timer.setText(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
-        } else if (p.timer) p.timer.setText(slot.feed ? 'SIAP!' : 'SIAP!');
+        } else if (p.timer) p.timer.setText('SIAP!');
       }
     }
   }

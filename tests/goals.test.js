@@ -59,9 +59,8 @@ describe('misi', () => {
     const wLo = lo.state.quests.weekly.find((q) => q.key === 'w_revenue');
     const wHi = hi.state.quests.weekly.find((q) => q.key === 'w_revenue');
     expect(wHi.goal).toBeGreaterThan(wLo.goal * 2);
-    expect(wLo.reward.points).toBe(0); // bintang 1 tidak mendapat poin
-    hi.state.day = 8; hi.ensureQuests(); // minggu ke-1 (ganjil) memberi poin
-    expect(hi.state.quests.weekly.find((q) => q.key === 'w_revenue').reward.points).toBe(1);
+    expect(wLo.reward.points).toBe(0); // poin skill datang dari peti misi penuh, bukan misi tunggal
+    expect(wHi.reward.cash).toBeGreaterThan(wLo.reward.cash * 2);
   });
 
   it('misi mingguan berganti tiap 7 hari', () => {

@@ -108,7 +108,11 @@ export function validateState(s) {
   else {
     for (const a of f.animals) if (!a || !isInt(a.id) || typeof a.itemId !== 'string' || typeof a.rarity !== 'string' || !(a.size > 0) || !nonNeg(a.cost)) { p.push('Hewan rusak'); break; }
     if (!Array.isArray(f.habs) || f.habs.length !== f.slots.length || f.habs.some((x) => typeof x !== 'string')) p.push('Habitat rusak');
-    for (const sl of f.slots) if (sl && (typeof sl.itemId !== 'string' || !nonNeg(sl.plantedAt) || !nonNeg(sl.readyAt) || (sl.qty !== undefined && (!Number.isInteger(sl.qty) || sl.qty < 1 || sl.qty > 12)))) { p.push('Kolam rusak'); break; }
+    if (!Array.isArray(f.levels) || f.levels.length !== f.slots.length || f.levels.some((x) => !Number.isInteger(x) || x < 1 || x > 3)) p.push('Level lahan rusak');
+    for (const lots of f.slots) {
+      if (!Array.isArray(lots)) { p.push('Kolam rusak'); break; }
+      if (lots.some((sl) => !sl || typeof sl.itemId !== 'string' || !nonNeg(sl.plantedAt) || !nonNeg(sl.readyAt) || (sl.qty !== undefined && (!Number.isInteger(sl.qty) || sl.qty < 1 || sl.qty > 12)))) { p.push('Kolam rusak'); break; }
+    }
   }
   if (!s.story || !nonNeg(s.story.ch) || typeof s.story.done !== 'boolean') p.push('Cerita rusak');
   const pt = s.pets;

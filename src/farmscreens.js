@@ -8,6 +8,8 @@ import { UI, h, rp, toast, rarOf, CAT_EMOJI } from './ui.js';
 import { audio } from './audio.js';
 import { animalSVG, feedSVG, eggSVG, petSVG, svgEl } from './art.svg.js';
 
+import * as farm from './core/farm.js';
+
 const P = UI.prototype;
 
 const mmss = (ms) => {
@@ -30,8 +32,6 @@ const hab = (id) => getHabitat(id);
 P.tapPlot = function tapPlot({ slot, hab: habId, buy }) {
   const e = this.e;
   if (buy) return this.openBuyPlot(habId);
-  const pr = e.slotProgress(slot);
-  if (pr?.ready) return this.harvestUI(slot);
   return this.openPlot(slot);
 };
 
@@ -72,24 +72,48 @@ P.openPlot = function openPlot(i) {
   const speciesOf = () => e.unlockedItems().filter((it) => H.cats.includes(it.cat));
   this.plantSel = this.plantSel || { itemId: null, feed: null };
   let lastState = '';
-  const stateKey = () => `${e.state.farm.slots[i] ? 1 : 0}${e.slotProgress(i)?.ready ? 1 : 0}`;
+  const stateKey = () => `${farm.spotLevel(e, i)}|${farm.spotLots(e, i).map((l, k) => `${l.itemId}${l.qty}${e.slotProgress(i, k)?.ready ? 1 : 0}`).join(',')}`;
   this.openSheet(`${H.one} ${slotsOfHab(e, H.id).indexOf(i) + 1}`, () => {
     const fm = e.state.farm;
-    const slot = fm.slots[i];
+    const bal = e.state.ledger.balance;
+    const lots = farm.spotLots(e, i);
+    const lv = farm.spotLevel(e, i);
+    const cap = farm.slotCap(e, i);
+    const used = farm.spotUsed(e, i);
+    const free = farm.spotFree(e, i);
+    const readyN = farm.spotReady(e, i);
+    const up = farm.spotUpgradeCost(e, i);
     const out = [];
     lastState = stateKey();
-    if (slot) {
-      const it = getItem(slot.itemId);
-      const pr = e.slotProgress(i);
-      const feed = slot.feed ? FEEDS.find((f) => f.id === slot.feed) : null;
-      out.push(h('div', { class: `card${pr.ready ? ' hero' : ''}` },
-        h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px' }, svgEl(animalSVG(it), 64, pr.ready ? 'bounce' : ''),
-          h('div', { class: 'grow' }, h('b', {}, `${it.name}${slotQty(slot) > 1 ? ` ×${slotQty(slot)}` : ''}`), h('div', { class: 'sub' }, feed ? `Pakan: ${feed.name}` : 'Tanpa pakan'),
-            h('div', { class: 'sub', 'data-t': i }, pr.ready ? 'SIAP PANEN!' : `Sisa ${mmss(pr.remainMs)}`))),
-        h('div', { class: 'meter' }, h('i', { 'data-b': i, style: `width:${Math.round(pr.pct * 100)}%` }))));
-      out.push(pr.ready
-        ? h('button', { class: 'btn', onClick: () => { this.closeModal(); this.harvestUI(i); } }, 'Panen sekarang')
-        : h('div', { class: 'sub' }, 'Sabar ya, hewanmu sedang tumbuh. Ketuk lahan lagi saat sudah siap.'));
+    // kepala: level dan kapasitas
+    out.push(h('div', { class: 'card' },
+      h('div', { class: 'card-top' }, h('b', {}, `${H.one} Lv ${lv}`), h('span', { class: 'badge' }, `${used}/${cap} ekor`)),
+      h('div', { class: 'meter' }, h('i', { style: `width:${Math.round((used / cap) * 100)}%` })),
+      up === null
+        ? h('div', { class: 'sub' }, 'Level tertinggi.')
+        : h('button', { class: 'btn small secondary', disabled: bal < up, onClick: () => this.act(() => e.upgradeSpot(i), `${H.one} naik ke Lv ${lv + 1}`, 'upgrade') },
+          `Upgrade ke Lv ${lv + 1} (muat ${farm.HAB_LEVEL_CAPS[lv]} ekor) · ${rp(up)}`)));
+    // daftar penghuni
+    if (lots.length) {
+      out.push(h('div', { class: 'sub', style: 'font-weight:700' }, `Penghuni (${lots.length})`));
+      lots.forEach((lot, k) => {
+        const it = getItem(lot.itemId);
+        const pr = e.slotProgress(i, k);
+        const feed = lot.feed ? FEEDS.find((f) => f.id === lot.feed) : null;
+        out.push(h('div', { class: `card${pr.ready ? ' hero' : ''}` },
+          h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px' }, svgEl(animalSVG(it), 48, pr.ready ? 'bounce' : ''),
+            h('div', { class: 'grow' }, h('b', {}, `${it.name} ×${slotQty(lot)}`), h('div', { class: 'sub' }, feed ? `Pakan: ${feed.name}` : 'Tanpa pakan'),
+              h('div', { class: 'sub', 'data-t': `${i}:${k}` }, pr.ready ? 'SIAP PANEN!' : `Sisa ${mmss(pr.remainMs)}`))),
+          h('div', { class: 'meter' }, h('i', { 'data-b': `${i}:${k}`, style: `width:${Math.round(pr.pct * 100)}%` })),
+          pr.ready ? h('button', { class: 'btn small', onClick: () => { this.closeModal(); this.harvestUI(i, k); } }, 'Panen penghuni ini') : null));
+      });
+      if (readyN > 1) out.push(h('button', { class: 'btn', onClick: () => { this.closeModal(); this.harvestUI(i); } }, `Panen semua yang siap (${readyN})`));
+    } else {
+      out.push(h('div', { class: 'card' }, h('b', {}, `${H.one} masih kosong`), h('div', { class: 'sub' }, 'Tambah penghuni di bawah: pilih spesies, jumlah, dan pakan.')));
+    }
+    // tambah penghuni
+    if (!free) {
+      out.push(h('div', { class: 'card warn' }, h('b', {}, 'Penuh'), h('div', { class: 'sub' }, up === null ? 'Panen dulu untuk mengosongkan tempat.' : 'Panen dulu atau upgrade lahan untuk menambah penghuni.')));
       return out;
     }
     const list = speciesOf();
@@ -97,12 +121,12 @@ P.openPlot = function openPlot(i) {
       out.push(h('div', { class: 'card warn' }, h('b', {}, `Belum ada spesies untuk ${H.name}`), h('div', { class: 'sub' }, H.id === 'kandang' ? 'Naikkan Toko ke Lv 2 untuk membuka burung dan satwa kecil.' : 'Buka spesies baru di menu.')));
       return out;
     }
+    out.push(h('div', { class: 'sub', style: 'font-weight:700;margin-top:4px' }, `Tambah penghuni (sisa tempat ${free})`));
     const sel = this.plantSel;
     if (!sel.itemId || !list.some((x) => x.id === sel.itemId)) sel.itemId = list[0].id;
     const item = getItem(sel.itemId);
     const have = fm.bibit[sel.itemId] || 0;
-    const cap = H.cap;
-    const maxQty = Math.max(0, Math.min(cap, have, sel.feed ? (fm.feeds[sel.feed] || 0) : cap));
+    const maxQty = Math.max(0, Math.min(free, have, sel.feed ? (fm.feeds[sel.feed] || 0) : free));
     if (sel.qty === undefined || sel.qty > maxQty || sel.qty < 1) sel.qty = Math.max(1, maxQty);
     const qty = sel.qty;
     const feedOk = !sel.feed || (fm.feeds[sel.feed] || 0) >= 1;
@@ -111,8 +135,7 @@ P.openPlot = function openPlot(i) {
       svgEl(animalSVG(it), 18), ' ', it.name.split(' ').slice(-1)[0], ` ×${fm.bibit[it.id] || 0}`))));
     out.push(h('div', { class: 'card' },
       h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px' }, svgEl(animalSVG(item), 52),
-        h('div', { class: 'grow' }, h('b', {}, item.name), h('div', { class: 'sub' }, `Bibit punya ${have} · tumbuh ${mmss(growMs(e, sel.itemId, sel.feed))}`),
-          h('div', { class: 'sub' }, `Muat maksimal ${cap} sekaligus`))),
+        h('div', { class: 'grow' }, h('b', {}, item.name), h('div', { class: 'sub' }, `Bibit punya ${have} · tumbuh ${mmss(growMs(e, sel.itemId, sel.feed))}`))),
       h('div', { class: 'row', style: 'justify-content:space-between' },
         h('b', {}, 'Jumlah'),
         h('div', { class: 'stepper' },
@@ -132,7 +155,7 @@ P.openPlot = function openPlot(i) {
       out.push(h('button', { class: 'btn secondary', onClick: () => { this.closeModal(); this.openPasar(); } }, 'Bibit habis, ke Pasar'));
     } else {
       out.push(h('button', { class: 'btn', disabled: !feedOk || maxQty < 1,
-        onClick: () => { this.act(() => e.plant(i, sel.itemId, sel.feed, qty), `Menanam ${qty} ${item.name}`, 'ok'); sel.qty = undefined; this.ctx.scene()?.refreshFarm(); this.closeModal(); } },
+        onClick: () => { this.act(() => e.plant(i, sel.itemId, sel.feed, qty), `Menanam ${qty} ${item.name}`, 'ok'); sel.qty = undefined; this.ctx.scene()?.refreshFarm(); this.rerender(); } },
       feedOk && maxQty >= 1 ? `Tanam ${qty} ${item.name}` : 'Pakan habis, beli di Pasar'));
     }
     return out;
@@ -140,13 +163,14 @@ P.openPlot = function openPlot(i) {
   this.modalTimer = setInterval(() => {
     if (!this.modal) return;
     if (stateKey() !== lastState) { this.rerender(); return; }
-    const slot = e.state.farm.slots[i];
-    if (!slot) return;
-    const pr = e.slotProgress(i);
-    const b = this.modal.body.querySelector(`[data-b="${i}"]`);
-    const t = this.modal.body.querySelector(`[data-t="${i}"]`);
-    if (b) b.style.width = `${Math.round(pr.pct * 100)}%`;
-    if (t) t.textContent = pr.ready ? 'SIAP PANEN!' : `Sisa ${mmss(pr.remainMs)}`;
+    farm.spotLots(e, i).forEach((_, k) => {
+      const pr = e.slotProgress(i, k);
+      if (!pr) return;
+      const b = this.modal.body.querySelector(`[data-b="${i}:${k}"]`);
+      const t = this.modal.body.querySelector(`[data-t="${i}:${k}"]`);
+      if (b) b.style.width = `${Math.round(pr.pct * 100)}%`;
+      if (t) t.textContent = pr.ready ? 'SIAP PANEN!' : `Sisa ${mmss(pr.remainMs)}`;
+    });
   }, 500);
 };
 
@@ -166,11 +190,11 @@ P.showReveal = function showReveal(a, extra = 0) {
   setTimeout(() => ov.remove(), big ? 2800 : 1800);
 };
 
-P.harvestUI = function harvestUI(i) {
+P.harvestUI = function harvestUI(i, k = null) {
   const sc = this.ctx.scene();
   const at = sc?.plotCenter?.(i);
   let got = null;
-  this.act(() => { got = this.e.harvest(i); return got; }, null, null);
+  this.act(() => { got = k === null ? this.e.harvestSpot(i) : this.e.harvest(i, k); return got; }, null, null);
   if (!got || !got.length) return;
   const a = got.slice().sort((x, y) => rarityIdx(y.rarity) - rarityIdx(x.rarity))[0];
   this.playHarvest(a);

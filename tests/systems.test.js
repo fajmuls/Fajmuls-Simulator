@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { GameEngine, newState, migrate } from '../src/core/engine.js';
-import { auditLedger } from '../src/core/ledger.js';
+import { auditLedger, credit } from '../src/core/ledger.js';
 import { serialize, deserialize, validateState } from '../src/core/save.js';
 import { runDay } from './engine.test.js';
-import { STAR_THRESH, POTIONS } from '../src/core/catalog.js';
+import { STAR_THRESH, POTIONS, UPGRADES, getItem } from '../src/core/catalog.js';
 
 function rich(seed = 1, stars = 3, cash = 2_000_000) {
   const e = new GameEngine(newState(seed));
@@ -64,7 +64,7 @@ describe('spesies dan level toko', () => {
     expect(() => e.unlockSpecies('koi')).toThrow();
     const before = e.state.ledger.balance;
     e.unlockSpecies('mas');
-    expect(e.state.ledger.balance).toBe(before - 5000);
+    expect(e.state.ledger.balance).toBe(before - getItem('mas').unlockCost);
     expect(e.isUnlocked('mas')).toBe(true);
     expect(() => e.unlockSpecies('mas')).toThrow();
     e.unlockSpecies('cupang');
@@ -129,15 +129,16 @@ describe('bintang dan skill', () => {
     expect(e.skillPointsTotal()).toBe(0);
     e.state.stars = 3;
     expect(e.skillPointsTotal()).toBe(4);
-    e.state.day = 22; // 7 kelipatan 3 hari
-    expect(e.skillPointsTotal()).toBe(11);
-    e.state.stats.questsDone = 7; // 2 poin dari 6 misi
-    expect(e.skillPointsTotal()).toBe(13);
+    e.state.day = 21; // 4 kelipatan 5 hari
+    expect(e.skillPointsTotal()).toBe(8);
+    e.state.stats.dailyFull = 7; // 2 poin dari 6 hari misi penuh
+    e.state.stats.weeklyFull = 2; // +1 per minggu penuh
+    expect(e.skillPointsTotal()).toBe(12);
   });
 
   it('skill butuh prasyarat dan poin, efeknya kuat', () => {
     const e = rich(1, 1);
-    e.state.day = 10; // 3 poin
+    e.state.day = 16; // 3 poin
     expect(e.skillPointsFree()).toBe(3);
     expect(() => e.learnSkill('harga_prima')).toThrow('Butuh');
     e.learnSkill('tawar');
@@ -207,11 +208,11 @@ describe('karyawan', () => {
     const e = rich(1, 3);
     e.hire('kasir');
     e.hire('perawat');
-    expect(e.wages()).toBe(8000);
+    expect(e.wages()).toBe(12000); // gaji x1,5
     const cash = e.state.ledger.balance;
     const s = runDay(e);
-    expect(s.wages).toBe(8000);
-    expect(e.state.ledger.balance).toBe(cash - s.rent - 8000 - s.upkeep - s.tax);
+    expect(s.wages).toBe(12000);
+    expect(e.state.ledger.balance).toBe(cash - s.rent - 12000 - s.upkeep - s.tax);
 
     const poor = rich(1, 3, 5000);
     poor.hire('kasir');
@@ -435,7 +436,7 @@ describe('migrasi simpanan versi 1', () => {
   it('memuat simpanan lama tanpa kehilangan stok, upgrade, dan spesies', () => {
     const old = v1State();
     const loaded = deserialize(serialize(old));
-    expect(loaded.v).toBe(7);
+    expect(loaded.v).toBe(8);
     expect(loaded.stats.items).toEqual({});
     expect(loaded.upgrades.kecepatan).toBe(0);
     expect(loaded.farm.animals.filter((a) => a.itemId === 'mas').length).toBe(4);
@@ -492,7 +493,7 @@ describe('v3: kecepatan, pengeluaran, karyawan baru', () => {
     const copy = structuredClone(v2);
     const m = migrate(v2);
     expect(v2).toEqual(copy);
-    expect(m.v).toBe(7);
+    expect(m.v).toBe(8);
     expect(m.upgrades.kecepatan).toBe(0);
     expect(m.stats.items).toEqual({});
     expect(m.farm.animals.filter((a) => a.itemId === 'cacing').length).toBe(5);
@@ -572,7 +573,7 @@ describe('v4: migrasi misi, pencapaian, langganan, tutorial', () => {
     const copy = structuredClone(v3);
     const m = migrate(v3);
     expect(v3).toEqual(copy);
-    expect(m.v).toBe(7);
+    expect(m.v).toBe(8);
     expect(m.stats.sold).toBe(12);
     expect(m.stats.bought).toBe(0);
     expect(m.quests).toEqual({ dayId: 0, weekId: -1, daily: [], weekly: [] });

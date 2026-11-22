@@ -104,7 +104,7 @@ export const BASE_CAPACITY = 60;
 export const CAPACITY_PER_RAK = 40;
 export const BASE_MAX_QUALITY = 3;
 export const START_CASH = 50000;
-export const DAILY_RENT = 600;
+export const DAILY_RENT = 900;
 export const LEDGER_KEEP = 500;
 
 // ---------- Skill ----------
@@ -150,8 +150,9 @@ export const SKILLS = [
   { id: 'pet_kuat', branch: 'peternakan', name: 'Pawang Hebat', max: 5, req: null, desc: 'Efek semua pet yang dipakai +12% per rank.' },
   { id: 'slot_pet', branch: 'peternakan', name: 'Teman Setia', max: 3, req: 'pet_kuat', desc: 'Slot pet aktif +1 per rank.' },
 ];
-export const SKILL_POINT_EVERY_DAYS = 3; // satu poin tiap 3 hari bermain
-export const SKILL_POINT_EVERY_QUESTS = 3; // satu poin tiap 3 misi selesai
+export const SKILL_POINT_EVERY_DAYS = 5; // satu poin tiap 5 hari bermain
+export const SKILL_POINT_EVERY_FULL_DAYS = 3; // satu poin tiap 3 hari dengan semua misi harian selesai
+// (ditambah satu poin tiap minggu dengan semua misi mingguan selesai)
 
 // ---------- Ramuan ----------
 export const POTIONS = [
@@ -295,3 +296,10 @@ export const TAX_BRACKETS = [ // pajak progresif atas omzet harian
 ];
 export const WEALTH_TAX_FROM = 1500000; // kas di atas ini dikenai pajak harian
 export const WEALTH_TAX_RATE = 0.003;
+
+// ---------- Penyetelan laju ekonomi (v8): biaya kemajuan dinaikkan agar uang tidak terlalu cepat ----------
+export const PROGRESS_COST_SCALE = 2.2;
+const scaleCost = (n) => (n > 0 ? Math.max(500, Math.round((n * PROGRESS_COST_SCALE) / 500) * 500) : 0);
+for (const it of ITEMS) it.unlockCost = scaleCost(it.unlockCost);
+for (const lv of SHOP_LEVELS) lv.cost = scaleCost(lv.cost);
+for (const up of UPGRADES) up.costs = up.costs.map(scaleCost);

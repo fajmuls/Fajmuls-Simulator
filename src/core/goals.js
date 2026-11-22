@@ -34,10 +34,31 @@ function goalFor(def, stars, rng) {
   return Math.max(1, round(g * (def.scale === 'vip' ? 1 : wobble), def.step));
 }
 
-function rewardFor(def, stars, rng, key) {
-  const cash = round(300 * (1 + 0.8 * (stars - 1)) * (0.9 + rng() * 0.2) * (def.scope === 'weekly' ? 4 : 1), 50);
-  // poin skill dari misi mingguan hanya tiap 2 minggu supaya pohon skill tidak terlalu cepat penuh
-  return { cash, points: def.points && stars >= 2 && Number(key) % 2 === 1 ? def.points : 0 };
+// Hadiah uang naik mengikuti bintang. Poin skill tidak lagi dari misi tunggal, tapi dari misi penuh (lihat peti).
+export const QUEST_CASH = 1500;
+export const CHEST_DAILY = 3000;
+export const CHEST_WEEKLY = 15000;
+const starMul = (stars) => 1 + 0.8 * (stars - 1);
+
+function rewardFor(def, stars, rng) {
+  const cash = round(QUEST_CASH * starMul(stars) * (0.9 + rng() * 0.2) * (def.scope === 'weekly' ? 5 : 1), 50);
+  return { cash, points: 0 };
+}
+
+// Peti bonus: semua misi harian (atau mingguan) sudah diambil. Dibayar sekali per hari/minggu.
+function checkFull(engine, scope, notes = null) {
+  const s = engine.state;
+  const q = s.quests;
+  const list = scope === 'weekly' ? q.weekly : q.daily;
+  const flag = scope === 'weekly' ? 'weeklyChest' : 'dailyChest';
+  if (!list.length || q[flag] || !list.every((x) => x.claimed)) return null;
+  q[flag] = true;
+  const cash = Math.round((scope === 'weekly' ? CHEST_WEEKLY : CHEST_DAILY) * starMul(s.stars));
+  s.stats[scope === 'weekly' ? 'weeklyFull' : 'dailyFull'] = (s.stats[scope === 'weekly' ? 'weeklyFull' : 'dailyFull'] || 0) + 1;
+  credit(s.ledger, s.day, 'reward', cash, scope === 'weekly' ? 'Peti misi mingguan penuh' : 'Peti misi harian penuh');
+  const note = { type: 'reward', text: `${scope === 'weekly' ? 'Misi mingguan' : 'Misi harian'} penuh! Peti bonus +Rp ${cash.toLocaleString('id-ID')}` };
+  if (notes) notes.push(note); else engine.notes.push(note);
+  return { cash };
 }
 
 function pickQuests(engine, scope, count, seedKey) {
@@ -63,7 +84,7 @@ function pickQuests(engine, scope, count, seedKey) {
     const id = `${d.key}${cat ? `:${cat}` : ''}`;
     if (taken.has(d.key)) continue;
     taken.add(d.key);
-    out.push({ id, key: d.key, kind: d.kind, cat, goal: goalFor(d, s.stars, rng), prog: 0, claimed: false, reward: rewardFor(d, s.stars, rng, seedKey) });
+    out.push({ id, key: d.key, kind: d.kind, cat, goal: goalFor(d, s.stars, rng), prog: 0, claimed: false, reward: rewardFor(d, s.stars, rng) });
   }
   return out;
 }
@@ -95,12 +116,16 @@ export function ensureQuests(engine) {
   };
   if (q.weekId !== weekOf(s.day)) {
     settle(q.weekly);
+    checkFull(engine, 'weekly', notes);
     q.weekId = weekOf(s.day);
+    q.weeklyChest = false;
     q.weekly = pickQuests(engine, 'weekly', s.stars >= 3 ? 3 : 2, q.weekId);
   }
   if (q.dayId !== s.day) {
     settle(q.daily);
+    checkFull(engine, 'daily', notes);
     q.dayId = s.day;
+    q.dailyChest = false;
     q.daily = pickQuests(engine, 'daily', 3, s.day);
   }
   engine.notes.push(...notes);
@@ -128,7 +153,8 @@ export function claimQuest(engine, scope, index) {
   x.claimed = true;
   engine.state.stats.questsDone += 1;
   payReward(engine, x.reward, `Hadiah misi: ${questText(x)}`);
-  return x.reward;
+  const chest = checkFull(engine, scope === 'weekly' ? 'weekly' : 'daily');
+  return chest ? { ...x.reward, chest: chest.cash } : x.reward;
 }
 
 // ---------- Pencapaian ----------

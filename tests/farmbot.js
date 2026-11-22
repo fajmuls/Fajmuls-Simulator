@@ -21,10 +21,10 @@ export function farmRound(e, clock, { feedUp = true, expand = true } = {}) {
     if (s.ledger.balance > 90000) attempt(() => e.expandShop());
   }
   const unlocked = e.unlockedItems();
-  s.farm.slots.forEach((slot, i) => {
-    if (slot) return;
+  s.farm.slots.forEach((lots, i) => {
+    if (lots.length) return;
     // tanam spesies yang paling sedikit stoknya, tertimbang demand
-    const have = (id) => e.animalCount(id) + s.farm.slots.filter((x) => x && x.itemId === id).length * 2;
+    const have = (id) => e.animalCount(id) + s.farm.slots.flat().filter((x) => x.itemId === id).length * 2;
     const here = unlocked.filter((it) => habitatOf(it.id).id === s.farm.habs[i]);
     if (!here.length) return;
     const pick = here.slice().sort((a, b) => (have(a.id) / a.demand) - (have(b.id) / b.demand))[0];

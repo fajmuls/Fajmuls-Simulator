@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { GameEngine, newState } from '../src/core/engine.js';
-import { auditLedger } from '../src/core/ledger.js';
+import { auditLedger, credit } from '../src/core/ledger.js';
 import { validateState } from '../src/core/save.js';
 import { UPGRADES, ITEMS } from '../src/core/catalog.js';
 
@@ -51,11 +51,12 @@ describe('engine: belanja', () => {
     const before = e.state.ledger.balance;
     e.buyUpgrade('rak');
     expect(e.capacity()).toBe(100);
-    expect(e.state.ledger.balance).toBe(before - 15000);
+    expect(e.state.ledger.balance).toBe(before - UPGRADES.find((u) => u.id === 'rak').costs[0]);
   });
 
   it('kontrak supplier menaikkan kualitas maksimum', () => {
     const e = new GameEngine(newState(7));
+    credit(e.state.ledger, 1, 'reward', 1_000_000, 'modal tes');
     expect(e.maxQuality()).toBe(3);
     e.buyUpgrade('supplier');
     expect(e.maxQuality()).toBe(4);

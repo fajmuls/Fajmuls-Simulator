@@ -316,7 +316,7 @@ export class UI {
       this.fStory.replaceChildren(svgEl(statIconSVG('story'), 20), h('span', {}, `${sn.ready ? 'Beres!' : `${sn.cur}/${sn.need}`.replace(/(\d+)\/(\d{5,})/, (_m, a, b) => `${rpShort(Number(a)).replace('Rp ', '')}/${rpShort(Number(b)).replace('Rp ', '')}`)}`));
       this.fStory.classList.toggle('ready', sn.ready || !sn.introSeen);
     }
-    const readyN = s.farm.slots.filter((_, i) => e.slotProgress(i)?.ready).length;
+    const readyN = s.farm.slots.filter((_, i) => e.spotReady(i) > 0).length;
     this.fReady.style.display = readyN ? '' : 'none';
     this.fReady.replaceChildren(svgEl(statIconSVG('harvest'), 20), h('span', {}, `${readyN}`));
     this.tabs.kebun?.classList.toggle('badge-dot', readyN > 0);
@@ -545,7 +545,7 @@ export class UI {
           h('button', { class: 'btn small secondary', onClick: () => { this.closeModal(); this.openLangganan(); } }, 'Buka Buku Langganan')));
       }
       const hints = [];
-      const ready = e.state.farm.slots.filter((_, i) => e.slotProgress(i)?.ready).length;
+      const ready = e.state.farm.slots.filter((_, i) => e.spotReady(i) > 0).length;
       if (ready) hints.push(`🌱 ${ready} kolam siap dipanen`);
       hints.push(`Hewan di kandang: ${e.state.farm.animals.length}`);
       if (e.skillPointsFree() > 0) hints.push(`🌳 ${e.skillPointsFree()} poin skill belum dipakai`);

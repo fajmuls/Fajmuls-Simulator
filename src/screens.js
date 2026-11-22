@@ -4,7 +4,7 @@ import {
   getItem, getQuality, getUpgrade, getSkill, getShare, getProperty, itemsOf,
 } from './core/catalog.js';
 import { UI, h, rp, rpShort, starsText, qStars, CAT_EMOJI, iname } from './ui.js';
-import { ACHIEVEMENTS, achStat, questText, questIcon } from './core/goals.js';
+import { ACHIEVEMENTS, achStat, questText, questIcon, CHEST_DAILY, CHEST_WEEKLY } from './core/goals.js';
 import { audio } from './audio.js';
 import { REGULARS, BOND_THRESH, LEVEL_NAMES, LEVEL_REWARDS, LEVEL_PERKS, bondLevel, nextThresh } from './core/regulars.js';
 
@@ -87,7 +87,7 @@ P.openSkill = function openSkill() {
     const e = this.e;
     const out = [h('div', { class: 'card' },
       h('div', { class: 'card-top' }, h('b', {}, 'Poin skill'), h('span', { class: 'price' }, `${e.skillPointsFree()} bebas / ${e.skillPointsTotal()} total`)),
-      h('div', { class: 'sub' }, 'Poin didapat dari: tiap 3 hari bermain, tiap 3 misi selesai, bintang, level toko, dan bab cerita.'),
+      h('div', { class: 'sub' }, 'Poin didapat dari: tiap 5 hari bermain, 3 hari misi harian penuh, tiap minggu misi mingguan penuh, bintang, level toko, dan bab cerita.'),
       h('button', { class: 'btn secondary small', disabled: e.skillPointsSpent() === 0 || e.state.phase === 'open', onClick: () => { if (confirm('Reset semua skill? Poin dikembalikan.')) this.act(() => e.resetSkills(), 'Skill di-reset'); } }, '↺ Reset skill (gratis)'))];
     this.skillBranch ||= SKILL_BRANCHES[0].id;
     const used = (br) => SKILLS.filter((x) => x.branch === br.id).reduce((n, x) => n + e.skillRank(x.id), 0);
@@ -164,7 +164,7 @@ P.openKaryawan = function openKaryawan() {
     for (const st of STAFF) {
       const hired = !!s.staff[st.id];
       out.push(h('div', { class: 'card' },
-        h('div', { class: 'card-top' }, h('b', {}, `${st.icon} ${st.name}`), h('span', { class: 'price' }, `${rp(st.wage)}/hari`)),
+        h('div', { class: 'card-top' }, h('b', {}, `${st.icon} ${st.name}`), h('span', { class: 'price' }, `${rp(e.wageOf(st))}/hari`)),
         h('div', { class: 'sub' }, st.desc),
         hired
           ? h('button', { class: 'btn danger small', disabled: s.phase === 'open', onClick: () => { if (confirm(`Pecat ${st.name}?`)) this.act(() => e.fire(st.id), `${st.name} diberhentikan`); } }, 'Berhentikan')
@@ -354,14 +354,15 @@ P.openMisi = function openMisi() {
         h('div', { class: 'meter' }, h('i', { style: `width:${Math.min(100, (x.prog / x.goal) * 100)}%` })),
         h('div', { class: 'row', style: 'justify-content:space-between' },
           h('span', { class: 'sub' }, `Hadiah: ${rewardText(x.reward)}`),
-          h('button', { class: 'btn small', disabled: !done || x.claimed, onClick: () => this.act(() => e.claimQuest(scope, i), (r) => `Hadiah ${rewardText(r)}`, 'star') }, x.claimed ? 'Selesai' : done ? 'Ambil' : 'Belum')));
+          h('button', { class: 'btn small', disabled: !done || x.claimed, onClick: () => this.act(() => e.claimQuest(scope, i), (r) => `Hadiah ${rewardText(r)}${r.chest ? ` + peti ${rp(r.chest)}!` : ''}`, 'star') }, x.claimed ? 'Selesai' : done ? 'Ambil' : 'Belum')));
     };
     if (this.misiTab === 'daily') {
       out.push(h('div', { class: 'sub' }, `Hari ${s.day}. Misi harian diganti tiap hari baru. Misi yang selesai tapi lupa diambil dibayar otomatis.`));
       q.daily.forEach((x, i) => out.push(questCard(x, i, 'daily')));
+      out.push(h('div', { class: 'card hero' }, h('b', {}, `🎁 Peti misi harian ${q.dailyChest ? '(sudah diambil)' : ''}`), h('div', { class: 'sub' }, `Ambil semua misi harian: bonus ${rp(Math.round(CHEST_DAILY * (1 + 0.8 * (s.stars - 1))))}. Tiap 3 hari penuh = 1 poin skill (sudah ${s.stats.dailyFull || 0} hari).`)));
     } else if (this.misiTab === 'weekly') {
       const endDay = (q.weekId + 1) * 7;
-      out.push(h('div', { class: 'sub' }, `Berakhir di akhir hari ke-${endDay} (${Math.max(0, endDay - s.day + 1)} hari lagi). Misi omzet memberi poin skill di bintang 2 ke atas.`));
+      out.push(h('div', { class: 'sub' }, `Berakhir di akhir hari ke-${endDay} (${Math.max(0, endDay - s.day + 1)} hari lagi). Selesaikan semua untuk peti ${rp(Math.round(CHEST_WEEKLY * (1 + 0.8 * (s.stars - 1))))} + 1 poin skill${q.weeklyChest ? ' (sudah diambil)' : ''}.`));
       q.weekly.forEach((x, i) => out.push(questCard(x, i, 'weekly')));
     } else {
       e.checkAchievements();
