@@ -52,7 +52,8 @@ export class WorldScene extends Phaser.Scene {
     this.rackSprites = [];
     this.plots = [];
     this.petSprites = [];
-    this.staffSprites = {};
+    this.crewNpc = new Map();
+    this.crewBusy = new Set();
     this._lastTick = '';
     this._zone = '';
     this._zoneT = 0;
@@ -441,21 +442,153 @@ export class WorldScene extends Phaser.Scene {
     this.npcMark?.setVisible(show);
   }
 
+  // Sinkronkan karyawan di peta dengan daftar crew di mesin.
   refreshStaff() {
-    const spots = { kasir: [886, 848], pramuniaga: [560, 850], penjaga: [640, 850], satpam: [292, 402], badut: [560, 930], perawat: [330, 462] };
-    for (const st of STAFF) {
-      const on = !!this.engine.state.staff[st.id];
-      let sp = this.staffSprites[st.id];
-      if (on && !sp && this.textures.exists(`staff_${st.id}`)) {
-        const [x, y] = spots[st.id];
-        sp = this.add.image(x, y, `staff_${st.id}`).setOrigin(0.5, 1).setDisplaySize(46, 46).setDepth(y);
-        sp.baseY = y;
-        this.staffSprites[st.id] = sp;
-      } else if (!on && sp) {
-        sp.destroy();
-        delete this.staffSprites[st.id];
+    const hired = this.engine.state.crew.hired;
+    const live = new Set(hired.map((m) => m.uid));
+    for (const [uid, n] of this.crewNpc) {
+      if (live.has(uid)) continue;
+      if (n.claim) n.claim.claimed = null;
+      if (n.busy != null) this.crewBusy.delete(n.busy);
+      n.sprite.destroy(); n.bar.destroy(); n.tag.destroy();
+      this.crewNpc.delete(uid);
+    }
+    for (const m of hired) {
+      let n = this.crewNpc.get(m.uid);
+      if (!n) {
+        if (!this.textures.exists(`staff_${m.type}`)) continue;
+        const homes = this._homesOf(m.type);
+        const idx = hired.filter((x) => x.type === m.type).findIndex((x) => x.uid === m.uid);
+        const h = homes[idx % homes.length];
+        n = { m, x: h[0], y: h[1], home: h, homes, idx, path: [], state: 'idle', timer: 0, wait: 1 + Math.random() * 3, claim: null, busy: null, plan: null };
+        n.sprite = this.add.image(n.x, n.y, `staff_${m.type}`).setOrigin(0.5, 1).setDisplaySize(46, 46).setDepth(n.y);
+        n.bar = this.add.graphics().setDepth(9300);
+        n.tag = T(this, n.x, n.y - 54, '', 9, '#ffffff', { stroke: '#3b2a1c', strokeThickness: 3 }).setDepth(9301);
+        this.crewNpc.set(m.uid, n);
+      }
+      n.m = m;
+      n.tag.setText(m.lvl > 1 ? `Lv${m.lvl}` : '');
+    }
+  }
+
+  _homesOf(type) {
+    const H = {
+      kasir: [[840, 862], [790, 862], [740, 862]],
+      pramuniaga: [[560, 856], [640, 872], [720, 856]],
+      penjaga: [[600, 836], [660, 836], [720, 836]],
+      satpam: [[292, 402], [372, 402], [250, 402]],
+      badut: [[680, 430], [770, 420], [650, 305], [740, 395]],
+      perawat: [[270, 472], [390, 472], [330, 492]],
+      petani: [[1000, 392], [1180, 392], [1090, 392]],
+      peramal: [[745, 385], [705, 335]],
+    };
+    return H[type] || [[700, 860]];
+  }
+
+  _crewGo(n, x, y) {
+    n.path = this.nav.find(n.x, n.y, x, y);
+  }
+
+  _crewMove(n, dt, speed) {
+    let moving = false;
+    let budget = speed * dt;
+    while (budget > 0 && n.path.length) {
+      const t = n.path[0];
+      const dx = t.x - n.x;
+      const dy = t.y - n.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist <= budget) { n.x = t.x; n.y = t.y; n.path.shift(); budget -= dist; } else { n.x += (dx / dist) * budget; n.y += (dy / dist) * budget; budget = 0; }
+      if (Math.abs(dx) > 0.5) n.sprite.setFlipX(dx < 0);
+      moving = true;
+    }
+    return moving;
+  }
+
+  _crewRelease(n) {
+    if (n.claim) n.claim.claimed = null;
+    if (n.busy != null) this.crewBusy.delete(n.busy);
+    n.claim = null; n.busy = null; n.plan = null; n.timer = 0;
+    n.state = 'return';
+    this._crewGo(n, n.home[0], n.home[1]);
+  }
+
+  _updateCrew(time, dt, sdt) {
+    for (const n of this.crewNpc.values()) {
+      const job = n.m.type;
+      const jd = STAFF.find((x) => x.id === job);
+      let moving = false;
+      if (n.state === 'work') {
+        n.timer -= dt;
+        const total = this.engine.workInterval(n.m);
+        const f = 1 - Math.max(0, n.timer) / total;
+        n.bar.clear().fillStyle(0x3b2a1c, 1).fillRoundedRect(n.x - 15, n.y - 62, 30, 6, 3).fillStyle(0x58b368, 1).fillRoundedRect(n.x - 13.5, n.y - 60.5, Math.max(1, 27 * f), 3, 1.5);
+        if (n.timer <= 0) { n.bar.clear(); this._crewFinish(n); }
+      } else {
+        n.bar.clear();
+        if (n.state === 'walk') {
+          moving = this._crewMove(n, dt, 120);
+          if (!n.path.length) { n.state = 'work'; n.timer = this.engine.workInterval(n.m); }
+        } else if (n.state === 'return' || n.state === 'wander') {
+          moving = this._crewMove(n, dt, n.state === 'wander' ? 55 : 110);
+          if (!n.path.length) { n.state = 'idle'; n.wait = 3 + Math.random() * 5; }
+        } else {
+          n.wait -= dt;
+          if (jd.job === 'kasir' && this.dayActive) this._cashierLook(n);
+          else if (jd.job === 'penjaga' && n.wait <= 0) { n.wait = 1.2; this._keeperLook(n); }
+          else if (!jd.job && n.wait <= 0 && n.homes.length > 1) { const h = n.homes[Math.floor(Math.random() * n.homes.length)]; n.state = 'wander'; this._crewGo(n, h[0], h[1]); }
+        }
+      }
+      const bob = moving ? Math.sin(time / 70 + n.m.uid) * 2.2 : Math.sin(time / 500 + n.m.uid) * 1.2;
+      n.sprite.setPosition(n.x, n.y + bob).setDepth(n.y);
+      n.tag.setPosition(n.x, n.y - 54);
+    }
+  }
+
+  // Kasir: ambil pelanggan yang menunggu dan belum diurus, lalu hampiri.
+  _cashierLook(n) {
+    const c = this.queue.find((q) => q.state === 'waiting' && !q.claimed && this.engine.cashierPick(q.data, q.wantIdx) != null);
+    if (!c) return;
+    c.claimed = n;
+    n.claim = c;
+    n.state = 'walk';
+    this._crewGo(n, c.x - 8, c.y - 40);
+  }
+
+  _keeperLook(n) {
+    const plan = this.engine.keeperPlan(this.crewBusy);
+    if (!plan) return;
+    const plot = this.plots.find((p) => p.slot === plan.slot);
+    if (!plot) return;
+    n.plan = plan;
+    n.busy = plan.slot;
+    this.crewBusy.add(plan.slot);
+    n.state = 'walk';
+    const f = plotFront(plot.hab, plot.x, plot.y);
+    this._crewGo(n, f.x, f.y);
+  }
+
+  _crewFinish(n) {
+    const job = STAFF.find((x) => x.id === n.m.type).job;
+    if (job === 'kasir') {
+      const c = n.claim;
+      if (c && c.state === 'waiting' && this.dayActive) {
+        const id = this.engine.cashierPick(c.data, c.wantIdx);
+        if (id != null) this._serveWith(c, id, false);
+      }
+    } else if (job === 'penjaga' && n.plan) {
+      try {
+        const r = this.engine.keeperPerform(n.plan);
+        this.refreshFarm();
+        const plot = this.plots.find((p) => p.slot === n.plan.slot);
+        if (plot) {
+          this._popup(n.x, n.y - 70, r.type === 'panen' ? `Panen ${r.animals.length} ekor` : `Tanam ${r.qty} ${getItem(r.itemId).name}`, '#e6ffd0');
+          this.burst(plot.x, plot.y, 0x7ccf6a, 8);
+        }
+      } catch (err) {
+        this._popup(n.x, n.y - 70, err.message.slice(0, 28), '#ffd0d0');
       }
     }
+    this._crewRelease(n);
   }
 
   // ---------- Pet yang mengikuti pemain ----------
@@ -529,7 +662,7 @@ export class WorldScene extends Phaser.Scene {
     this._updatePlots(time);
     this._updatePets(time, dt);
     this._updateWeather(time);
-    for (const sp of Object.values(this.staffSprites)) sp.y = sp.baseY + Math.sin(time / 500 + sp.baseY) * 1.4;
+    if (!this.paused) this._updateCrew(time, dt * (this.dayActive ? this.speed : 1), dt);
     this._acc += dt;
     if (this._acc > 0.5) this._acc = 0;
     if (!this.dayActive || this.paused) return;
@@ -698,21 +831,28 @@ export class WorldScene extends Phaser.Scene {
   // ---------- Pelayanan ----------
   _serve(c) {
     if (c.state !== 'waiting' || !this.carry) return;
-    const res = this.engine.serveAnimal(c.data, c.wantIdx, this.carry.id);
+    this._serveWith(c, this.carry.id, true);
+  }
+
+  // Satu pintu penjualan: dipakai tangan pemain (byHand) dan kasir karyawan.
+  _serveWith(c, animalId, byHand) {
+    const res = this.engine.serveAnimal(c.data, c.wantIdx, animalId);
     if (!res.ok) {
+      if (!byHand) return false;
       const msg = { salah: 'Bukan itu!', kualitas: 'Kurang langka', mahal: 'Kemahalan!', habis: 'Stok habis' }[res.reason] || '?';
       this._popup(c.x, c.y - 100, msg, '#ffd0d0');
       c.patience -= res.reason === 'salah' ? 6 : 3;
       if (res.reason === 'habis') this.setCarry(null);
-      return;
+      return false;
     }
     c.bought = true;
-    const col = RARITIES.find((r) => r.id === this.carry.rarity).color;
+    const col = RARITIES.find((r) => r.id === res.animal.rarity).color;
     this.burst(c.x, c.y - 70, Phaser.Display.Color.HexStringToColor(col).color);
-    this.setCarry(null);
+    if (byHand) this.setCarry(null);
     this.hooks.onSale?.(res.total);
     this.refreshShelves();
     this._nextWant(c);
+    return true;
   }
 
   _beginOrder(c) {
@@ -899,7 +1039,7 @@ export class WorldScene extends Phaser.Scene {
     const f = plotFront(plot.hab, plot.x, plot.y);
     const path = this.nav.find(entry.x, entry.y, f.x, f.y);
     const caught = this.engine.thiefCaught(pv.slot);
-    const guard = this.staffSprites.satpam;
+    const guard = [...this.crewNpc.values()].find((n) => n.m.type === 'satpam') || null;
     const sprite = this.add.image(entry.x, entry.y, A.lookKey('biasa', 1)).setOrigin(0.5, 1).setDisplaySize(44, 68).setTint(0x59596f);
     const tag = T(this, entry.x, entry.y - 76, 'PENCURI!', 10, '#ffffff', { backgroundColor: '#b3261e', padding: { x: 4, y: 1 } }).setDepth(9400);
     this.thief = { x: entry.x, y: entry.y, path, entry, state: 'in', caught, slot: pv.slot, guard, sprite, tag, wait: 0 };

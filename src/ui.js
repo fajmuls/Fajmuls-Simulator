@@ -547,7 +547,7 @@ export class UI {
         out.push(h('div', { class: 'card' }, h('b', {}, '🦹 Pencuri'),
           lost ? h('div', { class: 'sub bad' }, `Hilang dari lahan: ${lost}`) : null,
           summary.chased ? h('div', { class: 'sub' }, `💂 Satpam mengusir ${summary.chased} pencuri`) : null,
-          !lost && !summary.chased ? null : (e.state.staff.satpam ? null : h('div', { class: 'sub' }, 'Sewa Satpam di Menu > Karyawan untuk menjaga kolam.'))));
+          !lost && !summary.chased ? null : (e.crewCount('satpam') ? null : h('div', { class: 'sub' }, 'Sewa Satpam di Menu > Karyawan untuk menjaga kolam.'))));
       }
       const hints = [];
       const ready = e.state.farm.slots.filter((_, i) => e.spotReady(i) > 0).length;
@@ -593,7 +593,7 @@ export class UI {
         ['skill', 'Skill', `${e.skillPointsFree()} poin`, () => this.openSkill(), e.skillPointsFree() > 0 ? e.skillPointsFree() : null],
         ['upgrade', 'Upgrade', `Toko Lv ${s.shopLevel}`, () => this.openUpgrade(), null],
         ['ramuan', 'Ramuan', s.stars >= 2 ? `${Object.keys(s.buffs).length} aktif` : 'butuh ★2', () => this.openRamuan(), null],
-        ['karyawan', 'Karyawan', `${Object.keys(s.staff).length} bekerja`, () => this.openKaryawan(), null],
+        ['karyawan', 'Karyawan', `${s.crew.hired.length}/${this.e.crewSlots()} slot`, () => this.openKaryawan(), null],
         ['bank', 'Bank', s.stars >= 2 ? `${s.loans.length} pinjaman` : 'butuh ★2', () => this.openBank(), null],
         ['investasi', 'Investasi', s.stars >= 3 ? rpShort(e.netWorth()) : 'butuh ★3', () => this.openInvestasi(), null],
         ['laporan', 'Laporan', 'Keuangan', () => this.openLaporan(), null],

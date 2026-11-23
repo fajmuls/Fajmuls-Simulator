@@ -194,7 +194,7 @@ export function achStat(engine, stat) {
     case 'stars': return s.stars;
     case 'shopLevel': return s.shopLevel;
     case 'items': return engine.unlockedItems().length;
-    case 'staff': return Object.keys(s.staff).length;
+    case 'staff': return s.crew.hired.length;
     case 'netWorth': return engine.netWorth();
     case 'bond': return engine.maxBondLevel ? engine.maxBondLevel() : 0;
     case 'questsDone': return s.stats.questsDone;

@@ -161,7 +161,7 @@ describe('bintang dan skill', () => {
     expect(e.mods().vip / v0).toBeCloseTo(2.2, 5);
     e.state.skills.lidah_emas = 8;
     expect(e.mods().payMul).toBeCloseTo(1.4, 5);
-    e.state.staff.kasir = true;
+    e.state.crew.hired.push({ uid: 3, type: 'kasir', lvl: 1 });
     const w0 = e.wages();
     e.state.skills.akuntan = 5;
     expect(e.wages()).toBeLessThan(w0);
@@ -203,11 +203,18 @@ describe('ramuan', () => {
   });
 });
 
+// Rekrut tanpa syarat: tambah slot, lisensi, lalu pekerjakan.
+function hireFree(e, type) {
+  e.state.skills.tim = (e.state.skills.tim || 0) + 1;
+  e.state.crew.licenses[type] = true;
+  return e.hire(type);
+}
+
 describe('karyawan', () => {
   it('gaji dibayar tiap hari dan tunggakan tercatat bila uang kurang', () => {
     const e = rich(1, 3);
-    e.hire('kasir');
-    e.hire('perawat');
+    hireFree(e, 'kasir');
+    hireFree(e, 'perawat');
     expect(e.wages()).toBe(12000); // gaji x1,5
     const cash = e.state.ledger.balance;
     const s = runDay(e);
@@ -215,23 +222,28 @@ describe('karyawan', () => {
     expect(e.state.ledger.balance).toBe(cash - s.rent - 12000 - s.upkeep - s.tax);
 
     const poor = rich(1, 3, 5000);
-    poor.hire('kasir');
-    poor.hire('perawat');
+    hireFree(poor, 'kasir');
+    hireFree(poor, 'perawat');
     runDay(poor);
     expect(poor.state.ledger.balance).toBeGreaterThanOrEqual(0);
     expect(poor.state.arrears).toBeGreaterThan(0);
     expect(auditLedger(poor.state.ledger)).toEqual([]);
   });
 
-  it('karyawan butuh bintang yang cukup', () => {
+  it('slot awal 0, skill menambah slot, jenis butuh lisensi atau misi', () => {
     const e = rich(1, 2);
+    expect(e.crewSlots()).toBe(0);
+    e.state.crew.licenses.kasir = true;
+    expect(() => e.hire('kasir')).toThrow(/slot/);
+    e.state.skills.tim = 1;
+    expect(() => e.hire('penjaga')).toThrow(/belum terbuka/);
     e.hire('kasir');
-    expect(() => e.hire('penjaga')).toThrow('bintang');
+    expect(() => e.hire('kasir')).toThrow(/Slot karyawan penuh/);
   });
 
   it('penjaga stok mengisi ulang barang yang menipis saat toko dibuka', () => {
     const e = rich(1, 3);
-    e.hire('penjaga');
+    hireFree(e, 'penjaga');
     e.setRestock('cacing', 30, 3);
     e.buyStock('cacing', 3, 5); // kurang dari separuh target
     e.startDay();
@@ -242,7 +254,7 @@ describe('karyawan', () => {
 
   it('penjaga stok tidak membelanjakan uang cadangan kewajiban harian', () => {
     const e = rich(1, 3, 40000);
-    e.hire('penjaga');
+    hireFree(e, 'penjaga');
     e.setRestock('cacing', 500, 3);
     e.startDay();
     expect(e.state.ledger.balance).toBeGreaterThanOrEqual(e.wages() + 3000 - 1);
@@ -436,7 +448,7 @@ describe('migrasi simpanan versi 1', () => {
   it('memuat simpanan lama tanpa kehilangan stok, upgrade, dan spesies', () => {
     const old = v1State();
     const loaded = deserialize(serialize(old));
-    expect(loaded.v).toBe(8);
+    expect(loaded.v).toBe(9);
     expect(loaded.stats.items).toEqual({});
     expect(loaded.upgrades.kecepatan).toBe(0);
     expect(loaded.farm.animals.filter((a) => a.itemId === 'mas').length).toBe(4);
@@ -493,7 +505,7 @@ describe('v3: kecepatan, pengeluaran, karyawan baru', () => {
     const copy = structuredClone(v2);
     const m = migrate(v2);
     expect(v2).toEqual(copy);
-    expect(m.v).toBe(8);
+    expect(m.v).toBe(9);
     expect(m.upgrades.kecepatan).toBe(0);
     expect(m.stats.items).toEqual({});
     expect(m.farm.animals.filter((a) => a.itemId === 'cacing').length).toBe(5);
@@ -534,7 +546,7 @@ describe('v3: kecepatan, pengeluaran, karyawan baru', () => {
     const base = () => { const e = mk(3, 2); e.state.stock['cacing:3'] = { qty: 5000, cost: 5000 * 400 }; return e; };
     const a = base();
     const b = base();
-    b.hire('satpam');
+    hireFree(b, 'satpam');
     const ta = a._applyTheft(20, 400).reduce((x, y) => x + y.n, 0);
     const tb = b._applyTheft(20, 400).reduce((x, y) => x + y.n, 0);
     expect(ta).toBeGreaterThan(tb);
@@ -544,8 +556,8 @@ describe('v3: kecepatan, pengeluaran, karyawan baru', () => {
   it('badut menambah pelanggan dan renovasi butuh toko level 4', () => {
     const e = mk();
     const before = e.mods().count;
-    e.hire('badut');
-    expect(e.mods().count).toBeCloseTo(before * 1.15, 5);
+    hireFree(e, 'badut');
+    expect(e.mods().count).toBeCloseTo(before * 1.05, 5);
     expect(e.upgradeAvailable('renovasi')).toBe(false);
     e.state.shopLevel = 4;
     expect(e.upgradeAvailable('renovasi')).toBe(true);
@@ -573,7 +585,7 @@ describe('v4: migrasi misi, pencapaian, langganan, tutorial', () => {
     const copy = structuredClone(v3);
     const m = migrate(v3);
     expect(v3).toEqual(copy);
-    expect(m.v).toBe(8);
+    expect(m.v).toBe(9);
     expect(m.stats.sold).toBe(12);
     expect(m.stats.bought).toBe(0);
     expect(m.quests).toEqual({ dayId: 0, weekId: -1, daily: [], weekly: [] });

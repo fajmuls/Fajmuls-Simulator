@@ -11,12 +11,13 @@ import {
 import { createLedger, credit, debit, sumByType } from './ledger.js';
 import { mulberry32, hashSeed, pickWeighted } from './rng.js';
 import * as farm from './farm.js';
+import * as crew from './crew.js';
 import * as story from './story.js';
 import { planRegulars, onRegularPaid, maxBondLevel, claimRegular } from './regulars.js';
 import { ensureQuests, trackQuests, claimQuest, checkAchievements, claimAchievement } from './goals.js';
 
 export const DAY_LENGTH_SEC = 90; // lama jendela pelanggan datang pada kecepatan 1x
-export const STATE_VERSION = 8;
+export const STATE_VERSION = 9;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -53,7 +54,7 @@ export function newState(seed = Date.now() % 2147483647) {
     skills: {},
     potions: {},
     buffs: {},
-    staff: {},
+    crew: crew.newCrew(),
     restock: {}, // itemId -> { target, q }
     autoPrice: { on: false, pct: 0 },
     lastBuy: {}, // itemId -> { q, n }
@@ -90,7 +91,8 @@ export function migrate(input) {
   if (input.v === 4) return migrate(migrateV4(input));
   if (input.v === 5) return migrate(migrateV5(input));
   if (input.v === 6) return migrate(migrateV6(input));
-  if (input.v === 7) return migrateV7(input);
+  if (input.v === 7) return migrate(migrateV7(input));
+  if (input.v === 8) return migrateV8(input);
   return input;
 }
 
@@ -115,6 +117,19 @@ function migrateV3(input) {
   s.bonusPoints = 0;
   s.regulars = {};
   s.tutorial = { step: 0, done: s.day > 1 || Object.keys(s.stock || {}).length > 0 };
+  return s;
+}
+
+// v8 -> v9: karyawan menjadi daftar orang bersama lisensi dan slot. Karyawan lama tetap bekerja:
+// tiap karyawan lama mendapat lisensi, satu orang, dan satu slot bonus.
+function migrateV8(input) {
+  const s = structuredClone(input);
+  s.v = 9;
+  const old = s.staff && typeof s.staff === 'object' ? Object.keys(s.staff).filter((k) => s.staff[k] && STAFF.some((x) => x.id === k)) : [];
+  s.crew = crew.newCrew();
+  for (const id of old) { s.crew.licenses[id] = true; s.crew.hired.push({ uid: s.crew.nextUid++, type: id, lvl: 1 }); }
+  s.crew.bonusSlots = old.length;
+  delete s.staff;
   return s;
 }
 
@@ -207,7 +222,7 @@ function migrateV1(input) {
   if (upgrades.supplier >= 1) mark('koi');
   for (const it of ITEMS) if (it.unlockCost > 0 && it.tier <= (maxTier[it.cat] || 0)) s.species[it.id] = true;
   Object.assign(s, {
-    skills: {}, potions: {}, buffs: {}, staff: {}, restock: {}, autoPrice: { on: false, pct: 0 }, lastBuy: {},
+    skills: {}, potions: {}, buffs: {}, restock: {}, autoPrice: { on: false, pct: 0 }, lastBuy: {},
     breeding: [], deposits: [], shares: {}, sharePrices: base.sharePrices, properties: {}, loans: [], nextId: 1,
   });
   s.stars = starsFor(s.reputation);
@@ -312,29 +327,24 @@ export class GameEngine {
     const sk = (id) => s.skills[id] || 0;
     const up = (id) => s.upgrades[id] || 0;
     const bf = (id) => (s.buffs[id] || 0) > 0;
-    const hasStaff = (id) => !!s.staff[id];
-    const count = P.count * (1 + 0.12 * up('dekorasi')) * (1 + 0.08 * sk('promosi')) * (bf('pemikat') ? 1.3 : 1) * (hasStaff('pramuniaga') ? 1.1 : 1) * (hasStaff('badut') ? 1.15 : 1) * (1 + 0.1 * up('renovasi')) * ev.count;
+    const count = P.count * (1 + 0.12 * up('dekorasi')) * (1 + 0.08 * sk('promosi')) * (bf('pemikat') ? 1.3 : 1) * (1 + crew.crewBuff(this, 'count')) * (1 + 0.1 * up('renovasi')) * ev.count;
     const disc = Math.min(0.5, P.disc + 0.025 * sk('tawar') + 0.03 * up('member') + (bf('borong') ? 0.12 : 0));
     const wtp = P.wtp + 0.03 * sk('harga_prima') + (bf('hartawan') ? 0.15 : 0) + ev.wtp;
     const vip = P.vip * (1 + 0.15 * sk('vipmagnet')) * (bf('vip') ? 2 : 1) * ev.vip;
     const rentCut = Math.min(0.6, P.rent + 0.1 * sk('juragan'));
     const rentBase = Math.round(DAILY_RENT * (1 + 0.6 * (s.shopLevel - 1)) * (1 + 0.25 * (s.stars - 1)));
     const rent = Math.max(0, Math.round(rentBase * (1 - rentCut)));
-    const repGain = (1 + 0.12 * sk('ramah') + 0.1 * sk('viral') + (bf('sahabat') ? 0.5 : 0)) * (hasStaff('satpam') ? 1.1 : 1);
+    const repGain = (1 + 0.12 * sk('ramah') + 0.1 * sk('viral') + (bf('sahabat') ? 0.5 : 0));
     const repLoss = Math.max(0.1, 1 - 0.12 * sk('ramah') - (bf('sahabat') ? 0.5 : 0));
-    const payTime = Math.max(0.15, 1 - 0.15 * up('kasir_modern') - 0.12 * sk('kasir_cepat') - (hasStaff('kasir') ? 0.45 : 0));
+    const payTime = Math.max(0.15, 1 - 0.15 * up('kasir_modern') - 0.12 * sk('kasir_cepat'));
     const payMul = 1 + 0.05 * sk('lidah_emas');
     return { count, disc, wtp, vip, rent, repGain, repLoss, payTime, payMul, event: ev };
   }
 
-  wageOf(st) {
-    const cut = Math.min(0.6, 0.08 * (this.state.skills.akuntan || 0));
-    return Math.round(st.wage * 1.5 * (1 - cut));
-  }
-
-  wages() {
-    return STAFF.reduce((sum, st) => sum + (this.state.staff[st.id] ? this.wageOf(st) : 0), 0);
-  }
+  wageOf(m) { return crew.wageOf(this, m); }
+  wages() { return crew.totalWages(this); }
+  crewBuff(key) { return crew.crewBuff(this, key); }
+  crewCount(type) { return crew.crewCount(this, type); }
 
 
   loanDue() {
@@ -545,21 +555,20 @@ export class GameEngine {
   }
 
   // ---------- Karyawan ----------
-  hire(id) {
-    this._requireIdle();
-    const st = getStaff(id);
-    this._requireStars(st.needStars, st.name);
-    if (this.state.staff[id]) throw new Error('Sudah dipekerjakan');
-    this.state.staff[id] = true;
-  }
-
-  fire(id) {
-    this._requireIdle();
-    getStaff(id);
-    if (!this.state.staff[id]) throw new Error('Karyawan tidak ada');
-    if (id === 'perawat' && this.state.breeding.length) throw new Error('Selesaikan breeding dulu');
-    delete this.state.staff[id];
-  }
+  hire(type) { return crew.hire(this, type); }
+  fire(uid) { return crew.fire(this, uid); }
+  buyLicense(type) { return crew.buyLicense(this, type); }
+  crewUpgradeCost(m) { return crew.upgradeCost(this, m); }
+  keeperStock(itemId) { return crew.stockOf(this, itemId); }
+  upgradeCrew(uid) { return crew.upgrade(this, uid); }
+  crewSlots() { return crew.crewSlots(this); }
+  crewStatus(type) { return crew.crewStatus(this, type); }
+  setKeeperRule(itemId, rule) { return crew.setKeeperRule(this, itemId, rule); }
+  setKeeperOpts(patch) { return crew.setKeeperOpts(this, patch); }
+  keeperPlan(busy) { return crew.keeperPlan(this, busy); }
+  keeperPerform(plan) { return crew.keeperPerform(this, plan); }
+  cashierPick(customer, wantIdx) { return crew.pickAnimalFor(this, customer, wantIdx); }
+  workInterval(m) { return crew.workInterval(this, m); }
 
   setRestock(itemId, target, quality) {
     getItem(itemId);
@@ -578,7 +587,7 @@ export class GameEngine {
   // Penjaga Stok: isi ulang barang yang tersisa kurang dari separuh target.
   runAutoRestock() {
     const log = [];
-    if (!this.state.staff.penjaga) return log;
+    if (!this.crewCount('penjaga')) return log;
     const reserve = this.dailyObligations();
     for (const [itemId, rule] of Object.entries(this.state.restock)) {
       if (!rule || rule.target <= 0 || !this.isUnlocked(itemId)) continue;
@@ -741,7 +750,7 @@ export class GameEngine {
     if (lot.qty === 0) lot.cost = 0;
     const id = this._id();
     const rng = mulberry32(hashSeed(s.seed, 'breed', id));
-    const perawat = !!s.staff.perawat;
+    const perawat = this.crewCount('perawat') > 0;
     const bibit = (s.buffs.bibit || 0) > 0;
     const duration = Math.max(1, 2 + it.tier - (perawat ? 1 : 0));
     const litter = 1 + (rng() < 0.5 ? 1 : 0) + (it.tier <= 2 ? 1 : 0) + (bibit ? 1 : 0);
@@ -1175,9 +1184,9 @@ export class GameEngine {
     s.arrears += m.rent - rentPaid;
     let wagesDue = 0;
     let wagesPaid = 0;
-    for (const st of STAFF) {
-      if (!s.staff[st.id]) continue;
-      const w = this.wageOf(st);
+    for (const m of s.crew.hired) {
+      const st = getStaff(m.type);
+      const w = this.wageOf(m);
       wagesDue += w;
       const paid = this._payUpTo('wage', w, `Gaji ${st.name}`);
       wagesPaid += paid;
@@ -1286,7 +1295,7 @@ export class GameEngine {
   upkeep() {
     const s = this.state;
     const base = this.stockAnimalCount() * UPKEEP_PER_ANIMAL * (1 + UPKEEP_SHOP_STEP * (s.shopLevel - 1));
-    return Math.round(base * (s.staff.perawat ? 0.7 : 1));
+    return Math.round(base * (this.crewCount('perawat') ? 0.7 : 1));
   }
 
   taxFor(revenue) {
@@ -1315,7 +1324,7 @@ export class GameEngine {
   _applySickness(day) {
     const s = this.state;
     if ((s.buffs.obat || 0) > 0 || day < 3) return [];
-    const p = SICK_CHANCE * (s.staff.perawat ? 0.4 : 1);
+    const p = SICK_CHANCE * (this.crewCount('perawat') ? 0.4 : 1);
     const rng = mulberry32(hashSeed(s.seed, 'sick', day));
     const out = {};
     for (const [key, lot] of Object.entries(s.stock)) {
@@ -1334,7 +1343,7 @@ export class GameEngine {
   _applyTheft(day, customers) {
     const s = this.state;
     if (day < 5) return [];
-    const p = THEFT_CHANCE * (s.staff.satpam ? 0.2 : 1);
+    const p = THEFT_CHANCE * (this.crewCount('satpam') ? 0.2 : 1);
     const rng = mulberry32(hashSeed(s.seed, 'theft', day));
     const out = {};
     for (let i = 0; i < customers; i++) {
@@ -1374,12 +1383,12 @@ export class GameEngine {
     return t.length ? { slot: t[Math.floor(plan.pick * t.length)] } : null;
   }
 
-  guardOn() { return !!this.state.staff.satpam; }
+  guardOn() { return this.crewCount('satpam') > 0; }
 
   // Satpam hanya menjaga kolam. Pencuri yang menuju lahan lain tidak terhalang.
   thiefCaught(slot) {
     const plan = this.today?.thief;
-    return !!plan && this.guardOn() && this.state.farm.habs[slot] === 'kolam' && plan.caughtRoll < THIEF_CATCH_SATPAM;
+    return !!plan && this.guardOn() && this.state.farm.habs[slot] === 'kolam' && plan.caughtRoll < crew.guardChance(this);
   }
 
   // Pencuri sampai di sasaran: satpam mengusir, atau satu ekor hilang dari lahan itu.

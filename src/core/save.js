@@ -57,8 +57,20 @@ export function validateState(s) {
   checkMap(s.potions, 'Ramuan', (k) => POTIONS.some((x) => x.id === k));
   checkMap(s.buffs, 'Buff', (k) => POTIONS.some((x) => x.id === k));
   checkMap(s.properties, 'Properti', (k) => PROPERTIES.some((x) => x.id === k), (k) => PROPERTIES.find((x) => x.id === k).max);
-  if (!s.staff || typeof s.staff !== 'object') p.push('Karyawan rusak');
-  else for (const k of Object.keys(s.staff)) if (!STAFF.some((x) => x.id === k)) p.push(`Karyawan ${k} tidak dikenal`);
+  const cr = s.crew;
+  if (!cr || typeof cr !== 'object' || !Array.isArray(cr.hired) || !cr.licenses || typeof cr.licenses !== 'object' || !cr.keeper || typeof cr.keeper.rules !== 'object') p.push('Karyawan rusak');
+  else {
+    if (!Number.isInteger(cr.bonusSlots) || cr.bonusSlots < 0) p.push('Slot karyawan rusak');
+    const seen = {};
+    for (const m of cr.hired) {
+      const def = STAFF.find((x) => x.id === m?.type);
+      if (!def) { p.push(`Karyawan ${m?.type} tidak dikenal`); continue; }
+      if (!Number.isInteger(m.uid) || !Number.isInteger(m.lvl) || m.lvl < 1 || m.lvl > 5) p.push('Data karyawan rusak');
+      seen[m.type] = (seen[m.type] || 0) + 1;
+      if (seen[m.type] > def.max) p.push(`Terlalu banyak ${def.name}`);
+    }
+    for (const k of Object.keys(cr.licenses)) if (!STAFF.some((x) => x.id === k)) p.push(`Lisensi ${k} tidak dikenal`);
+  }
   if (!s.species || typeof s.species !== 'object') p.push('Spesies rusak');
   else for (const k of Object.keys(s.species)) if (!ITEMS.some((x) => x.id === k)) p.push(`Spesies ${k} tidak dikenal`);
   if (!s.restock || typeof s.restock !== 'object') p.push('Aturan restok rusak');

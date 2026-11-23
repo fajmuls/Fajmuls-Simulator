@@ -132,6 +132,8 @@ export const SKILLS = [
   { id: 'viral', branch: 'pemasaran', name: 'Kabar Viral', max: 5, req: 'ramah', desc: 'Reputasi naik tambahan 10% per rank.' },
   // Logistik
   { id: 'gudang', branch: 'logistik', name: 'Gudang Rapi', max: 8, req: null, desc: 'Kapasitas stok +12 per rank.' },
+  { id: 'tim', branch: 'logistik', name: 'Manajemen Tim', max: 6, req: null, desc: 'Tambah 1 slot karyawan per rank (awal 0 slot).' },
+  { id: 'tim_cepat', branch: 'logistik', name: 'Tim Sigap', max: 5, req: 'tim', desc: 'Semua karyawan bekerja 10% lebih cepat per rank.' },
   { id: 'kasir_cepat', branch: 'logistik', name: 'Kasir Gesit', max: 5, req: 'gudang', desc: 'Pembayaran 12% lebih cepat per rank.' },
   { id: 'insting', branch: 'logistik', name: 'Insting Pasar', max: 1, req: 'kasir_cepat', desc: 'Lihat perkiraan harga grosir dan event besok.' },
   // Pemain
@@ -166,14 +168,37 @@ export const POTIONS = [
 ];
 
 // ---------- Karyawan ----------
+// Karyawan: tiap jenis punya SATU efek (buff atau pekerjaan) dan batas jumlah.
+// Dibuka dengan lisensi (beli) atau misi; jenis rahasia hanya lewat misi sulit.
+// mission.stat dibaca oleh crewStat() di crew.js.
 export const STAFF = [
-  { id: 'kasir', name: 'Kasir', icon: '🧾', wage: 3000, needStars: 2, desc: 'Tip pelayanan cepat +5%.' },
-  { id: 'pramuniaga', name: 'Pramuniaga', icon: '🙋', wage: 3500, needStars: 2, desc: 'Pelanggan +10%.' },
-  { id: 'penjaga', name: 'Penjaga Stok', icon: '📋', wage: 4000, needStars: 3, desc: 'Pelanggan 15% lebih sabar menunggu.' },
-  { id: 'satpam', name: 'Satpam', icon: '💂', wage: 4500, needStars: 2, desc: 'Reputasi naik 10% lebih cepat.' },
-  { id: 'badut', name: 'Badut Penarik Pengunjung', icon: '🤡', wage: 3500, needStars: 2, desc: 'Pelanggan +15% dan 20% lebih sabar menunggu.' },
-  { id: 'perawat', name: 'Perawat Hewan', icon: '🩺', wage: 5000, needStars: 3, desc: 'Bibit tumbuh 15% lebih cepat.' },
+  { id: 'kasir', name: 'Kasir', icon: '🧾', wage: 3000, max: 3, license: 6000, job: 'kasir',
+    desc: 'Melayani pelanggan di antrean menggantikanmu. Makin banyak kasir, makin banyak pelanggan dilayani bersamaan.',
+    mission: { stat: 'customers', goal: 25, desc: 'Layani 25 pelanggan' } },
+  { id: 'pramuniaga', name: 'Pramuniaga', icon: '🙋', wage: 3500, max: 3, license: 9000, buff: { key: 'patience', per: 0.06 },
+    desc: 'Pelanggan 6% lebih sabar menunggu (per orang).',
+    mission: { stat: 'stars', goal: 2, desc: 'Capai bintang 2' } },
+  { id: 'badut', name: 'Badut Penarik Pengunjung', icon: '🤡', wage: 3500, max: 2, license: 14000, buff: { key: 'count', per: 0.05 },
+    desc: 'Pelanggan +5% (per orang). Berkeliling di alun-alun.',
+    mission: { stat: 'customers', goal: 120, desc: 'Layani 120 pelanggan' } },
+  { id: 'penjaga', name: 'Penjaga Stok', icon: '📋', wage: 4000, max: 3, license: 12000, job: 'penjaga',
+    desc: 'Memanen dan menanam bibit sesuai aturanmu (mis. buat lagi bila stok kurang dari 5). Pekerjaannya lambat di awal.',
+    mission: { stat: 'bred', goal: 40, desc: 'Panen 40 hewan' } },
+  { id: 'satpam', name: 'Satpam', icon: '💂', wage: 4500, max: 2, license: 10000, job: 'satpam',
+    desc: 'Berjaga di gerbang kolam dan mengusir pencuri.',
+    mission: { stat: 'stolen', goal: 1, desc: 'Pernah kehilangan hewan karena pencuri' } },
+  { id: 'perawat', name: 'Perawat Hewan', icon: '🩺', wage: 5000, max: 3, license: 16000, buff: { key: 'grow', per: 0.05 },
+    desc: 'Bibit tumbuh 5% lebih cepat (per orang).',
+    mission: { stat: 'planted', goal: 60, desc: 'Tanam 60 hewan' } },
+  { id: 'petani', name: 'Petani Ahli', icon: '🧑‍🌾', wage: 6000, max: 2, secret: true, buff: { key: 'harvest', per: 0.06 },
+    desc: 'Tiap panen berpeluang +6% (per orang) memberi hewan bonus.',
+    mission: { stat: 'bred', goal: 200, desc: 'Panen 200 hewan' } },
+  { id: 'peramal', name: 'Peramal Pasar', icon: '🔮', wage: 7000, max: 2, secret: true, buff: { key: 'luck', per: 0.08 },
+    desc: 'Peluang rarity tinggi saat panen naik (per orang).',
+    mission: { stat: 'bestRar', goal: 4, desc: 'Dapatkan hewan Legendary' } },
 ];
+export const CREW_UPGRADE_MULS = [5, 12, 26, 55]; // biaya naik level = gaji x 1,5 x angka ini
+export const CREW_MAX_LEVEL = 5;
 
 // ---------- Investasi ----------
 export const DEPOSIT_TERMS = [

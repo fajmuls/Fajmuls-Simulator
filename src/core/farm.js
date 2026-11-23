@@ -145,10 +145,9 @@ export function farmBuffs(e) {
   const ev = e.eventOf();
   b.tip += ev.tip || 0;
   b.patience += ev.patience || 0;
-  if (e.state.staff.perawat) b.grow += 0.15;
-  if (e.state.staff.badut) b.patience += 0.2;
-  if (e.state.staff.penjaga) b.patience += 0.15;
-  if (e.state.staff.kasir) b.tip += 0.05;
+  b.grow += e.crewBuff('grow');
+  b.patience += e.crewBuff('patience');
+  b.luck += e.crewBuff('luck');
   return b;
 }
 
@@ -283,7 +282,7 @@ export function harvest(e, slot, k = 0) {
   // hewan bonus: Musim Subur (pasti) + skill Panen Berkah (peluang)
   const bonusRng = mulberry32(hashSeed(e.state.seed, 'bonus', fm.rolls));
   n += e.eventOf().bonus || 0;
-  if (bonusRng() < 0.08 * (e.state.skills.panen_ganda || 0)) n += 1;
+  if (bonusRng() < 0.08 * (e.state.skills.panen_ganda || 0) + e.crewBuff('harvest')) n += 1;
   for (let k = 0; k < n; k++) {
     const rng = mulberry32(hashSeed(e.state.seed, 'harvest', fm.rolls));
     fm.rolls += 1;

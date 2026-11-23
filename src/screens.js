@@ -3,6 +3,7 @@ import {
   STAR_PERKS, STAR_THRESH, DEPOSIT_TERMS, DEPOSIT_MIN, LOAN_TERMS, LOAN_MIN, LOAN_STEP, PROPERTY_SELL_RATE,
   getItem, getQuality, getUpgrade, getSkill, getShare, getProperty, itemsOf,
 } from './core/catalog.js';
+import { FEEDS, feedOpen } from './core/farm.js';
 import { UI, h, rp, rpShort, starsText, qStars, CAT_EMOJI, iname } from './ui.js';
 import { ACHIEVEMENTS, achStat, questText, questIcon, CHEST_DAILY, CHEST_WEEKLY } from './core/goals.js';
 import { audio } from './audio.js';
@@ -24,7 +25,7 @@ P.openFitur = function openFitur() {
       ['🌳', 'Pohon Skill', `${e.skillPointsFree()} poin bebas`, () => this.openSkill(), e.skillPointsFree() > 0 ? e.skillPointsFree() : null],
       ['🏬', 'Upgrade & Perluas', `Toko Lv ${s.shopLevel}`, () => this.openUpgrade(), null],
       ['🧪', 'Ramuan', s.stars >= 2 ? `${Object.keys(s.buffs).length} aktif` : '🔒 ★2', () => this.openRamuan(), null],
-      ['🧑‍🤝‍🧑', 'Karyawan', `${Object.keys(s.staff).length} bekerja`, () => this.openKaryawan(), null],
+      ['🧑‍🤝‍🧑', 'Karyawan', `${s.crew.hired.length}/${this.e.crewSlots()} slot`, () => this.openKaryawan(), null],
       ['🏦', 'Bank', s.stars >= 2 ? `${s.loans.length} pinjaman` : '🔒 ★2', () => this.openBank(), null],
       ['📊', 'Investasi', s.stars >= 3 ? `Kekayaan ${rpShort(e.netWorth())}` : '🔒 ★3', () => this.openInvestasi(), null],
     ];
@@ -156,30 +157,73 @@ P.openRamuan = function openRamuan() {
 
 // ---------- Karyawan ----------
 P.openKaryawan = function openKaryawan() {
+  const tab = this._crewTab || 'tim';
   this.openSheet('Karyawan', () => {
     const e = this.e;
     const s = e.state;
-    const out = [h('div', { class: 'card' }, h('div', { class: 'card-top' }, h('b', {}, 'Total gaji harian'), h('span', { class: 'price' }, rp(e.wages()))),
-      h('div', { class: 'sub' }, 'Gaji dibayar tiap akhir hari. Bila uang kurang, jadi tunggakan.'))];
-    for (const st of STAFF) {
-      const hired = !!s.staff[st.id];
-      out.push(h('div', { class: 'card' },
-        h('div', { class: 'card-top' }, h('b', {}, `${st.icon} ${st.name}`), h('span', { class: 'price' }, `${rp(e.wageOf(st))}/hari`)),
-        h('div', { class: 'sub' }, st.desc),
-        hired
-          ? h('button', { class: 'btn danger small', disabled: s.phase === 'open', onClick: () => { if (confirm(`Pecat ${st.name}?`)) this.act(() => e.fire(st.id), `${st.name} diberhentikan`); } }, 'Berhentikan')
-          : h('button', { class: 'btn small', disabled: s.stars < st.needStars || s.phase === 'open', onClick: () => this.act(() => e.hire(st.id), `${st.name} dipekerjakan`) }, s.stars < st.needStars ? `Butuh bintang ${st.needStars}` : 'Pekerjakan')));
-    }
-    if (s.staff.penjaga) {
-      out.push(h('div', { class: 'sub', style: 'font-weight:700;margin-top:4px' }, '📋 Aturan Penjaga Stok (isi ulang bila stok < separuh target)'));
-      for (const it of e.unlockedItems()) {
-        const rule = s.restock[it.id];
-        const target = h('input', { type: 'number', min: 0, max: 500, value: rule ? rule.target : 0, inputMode: 'numeric', style: 'width:70px' });
-        const q = h('select', {}, [1, 2, 3, 4, 5].filter((n) => n <= e.maxQuality()).map((n) => h('option', { value: n, selected: (rule ? rule.q : Math.min(3, e.maxQuality())) === n }, getQuality(n).name)));
+    const c = s.crew;
+    const slots = e.crewSlots();
+    const setTab = (t) => { this._crewTab = t; this.openKaryawan(); };
+    const out = [
+      h('div', { class: 'card' },
+        h('div', { class: 'card-top' }, h('b', {}, `Slot ${c.hired.length} / ${slots}`), h('span', { class: 'price' }, `${rp(e.wages())}/hari`)),
+        h('div', { class: 'sub' }, slots === 0
+          ? 'Belum ada slot. Pelajari skill Manajemen Tim (cabang Logistik) untuk membuka slot karyawan.'
+          : 'Gaji dibayar tiap akhir hari. Tambah slot lewat skill Manajemen Tim; Tim Sigap mempercepat kerja.')),
+      h('div', { class: 'row' }, ...[['tim', 'Tim'], ['rekrut', 'Rekrut'], ['stok', 'Penjaga Stok']].map(([id, label]) =>
+        h('button', { class: `btn small grow ${tab === id ? '' : 'secondary'}`, onClick: () => setTab(id) }, label))),
+    ];
+    if (tab === 'tim') {
+      if (!c.hired.length) out.push(h('div', { class: 'sub' }, 'Belum ada karyawan. Buka tab Rekrut.'));
+      for (const m of c.hired) {
+        const def = STAFF.find((x) => x.id === m.type);
+        const cost = e.crewUpgradeCost(m);
         out.push(h('div', { class: 'card' },
-          h('div', { class: 'card-top' }, h('b', {}, iname(it)), h('span', { class: 'sub' }, `stok ${e.totalQty(it.id)}`)),
-          h('div', { class: 'row' }, h('span', { class: 'sub' }, 'Target'), target, h('div', { class: 'grow' }, q),
-            h('button', { class: 'btn small', onClick: () => this.act(() => e.setRestock(it.id, Math.floor(Number(target.value) || 0), Number(q.value)), 'Aturan disimpan') }, 'Simpan'))));
+          h('div', { class: 'card-top' }, h('b', {}, `${def.icon} ${def.name} Lv${m.lvl}`), h('span', { class: 'price' }, `${rp(e.wageOf(m))}/hari`)),
+          h('div', { class: 'sub' }, def.desc),
+          h('div', { class: 'row' },
+            h('button', { class: 'btn small grow', disabled: cost === null || s.ledger.balance < cost, onClick: () => this.act(() => e.upgradeCrew(m.uid), `${def.name} naik level`) }, cost === null ? 'Level maks' : `Naik level ${rp(cost)}`),
+            h('button', { class: 'btn danger small', onClick: () => { if (confirm(`Berhentikan ${def.name}?`)) this.act(() => e.fire(m.uid), `${def.name} diberhentikan`); } }, 'Berhentikan'))));
+      }
+    } else if (tab === 'rekrut') {
+      for (const def of STAFF) {
+        const st = e.crewStatus(def.id);
+        const n = c.hired.filter((m) => m.type === def.id).length;
+        if (def.secret && !st.unlocked) {
+          out.push(h('div', { class: 'card' }, h('div', { class: 'card-top' }, h('b', {}, '❓ ???'), h('span', { class: 'badge' }, 'Rahasia')),
+            h('div', { class: 'sub' }, `Misi: ${def.mission.desc} (${Math.min(st.have, st.goal)}/${st.goal})`)));
+          continue;
+        }
+        let action;
+        if (st.unlocked) {
+          action = h('button', { class: 'btn small', disabled: n >= def.max || c.hired.length >= slots, onClick: () => this.act(() => e.hire(def.id), `${def.name} dipekerjakan`) },
+            n >= def.max ? `Maksimal ${def.max}` : c.hired.length >= slots ? 'Slot penuh' : 'Pekerjakan');
+        } else {
+          action = h('button', { class: 'btn small', disabled: s.ledger.balance < def.license, onClick: () => this.act(() => e.buyLicense(def.id), `Lisensi ${def.name} dibeli`) }, `Beli lisensi ${rp(def.license)}`);
+        }
+        out.push(h('div', { class: 'card' },
+          h('div', { class: 'card-top' }, h('b', {}, `${def.icon} ${def.name}`), h('span', { class: 'badge' }, `${n}/${def.max}`)),
+          h('div', { class: 'sub' }, def.desc),
+          st.unlocked ? h('div', { class: 'sub' }, `Terbuka lewat ${st.via}. Gaji ${rp(Math.round(def.wage * 1.5))}/hari`)
+            : h('div', { class: 'sub' }, `Misi: ${def.mission.desc} (${Math.min(st.have, st.goal)}/${st.goal}) atau beli lisensi.`),
+          action));
+      }
+    } else {
+      const k = c.keeper;
+      if (!c.hired.some((m) => m.type === 'penjaga')) out.push(h('div', { class: 'sub' }, 'Rekrut Penjaga Stok dulu. Awalnya ia bekerja lambat; naikkan level dan skill Tim Sigap.'));
+      out.push(h('div', { class: 'card' },
+        h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: k.harvest, onChange: (ev) => this.act(() => e.setKeeperOpts({ harvest: ev.target.checked }), 'Disimpan') }), h('span', { class: 'sub' }, 'Panen otomatis yang sudah matang')),
+        h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: k.autoBuy, onChange: (ev) => this.act(() => e.setKeeperOpts({ autoBuy: ev.target.checked }), 'Disimpan') }), h('span', { class: 'sub' }, 'Beli bibit otomatis bila uang cukup'))));
+      out.push(h('div', { class: 'sub', style: 'font-weight:700' }, 'Tanam lagi bila stok kurang dari:'));
+      for (const it of e.unlockedItems()) {
+        const r = k.rules[it.id];
+        const below = h('input', { type: 'number', min: 0, max: 50, value: r ? r.below : 0, inputMode: 'numeric', style: 'width:56px' });
+        const qty = h('input', { type: 'number', min: 1, max: 6, value: r ? r.qty : 1, inputMode: 'numeric', style: 'width:48px' });
+        const feed = h('select', {}, [h('option', { value: '' }, 'Tanpa pakan'), ...FEEDS.filter((f) => feedOpen(e, f)).map((f) => h('option', { value: f.id, selected: r && r.feed === f.id }, f.name))]);
+        out.push(h('div', { class: 'card' },
+          h('div', { class: 'card-top' }, h('b', {}, iname(it)), h('span', { class: 'sub' }, `stok ${e.keeperStock(it.id)}`)),
+          h('div', { class: 'row' }, h('span', { class: 'sub' }, '<'), below, h('span', { class: 'sub' }, 'jml'), qty, h('div', { class: 'grow' }, feed),
+            h('button', { class: 'btn small', onClick: () => this.act(() => e.setKeeperRule(it.id, { below: Number(below.value) || 0, qty: Number(qty.value) || 1, feed: feed.value || null }), 'Aturan disimpan') }, 'Simpan'))));
       }
     }
     return out;

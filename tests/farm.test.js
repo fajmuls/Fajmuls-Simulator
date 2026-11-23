@@ -128,7 +128,7 @@ describe('peternakan', () => {
     old.v = 5; delete old.farm.habs; delete old.story;
     old.farm.slots = [null, { itemId: 'lele', feed: null, plantedAt: 1, readyAt: 2, cost: 5 }, null, null];
     const m = migrate(old);
-    expect(m.v).toBe(8);
+    expect(m.v).toBe(9);
     expect(m.farm.habs.length).toBe(4);
     expect(m.farm.habs[1]).toBe('kolam');
     expect(m.story.ch).toBe(0);
@@ -264,14 +264,18 @@ describe('pengepul dan karyawan', () => {
     expect(auditLedger(e.state.ledger)).toEqual([]);
   });
 
-  it('karyawan memberi buff, bukan layanan otomatis', () => {
+  it('tiap jenis karyawan punya satu buff dan menumpuk menurut jumlah dan level', () => {
     const { e } = mk();
     const b0 = e.farmBuffs();
-    e.state.staff.badut = true; e.state.staff.perawat = true; e.state.staff.kasir = true;
+    const c0 = e.mods().count;
+    e.state.crew.hired.push({ uid: 1, type: 'pramuniaga', lvl: 1 }, { uid: 2, type: 'pramuniaga', lvl: 1 }, { uid: 3, type: 'perawat', lvl: 1 }, { uid: 4, type: 'badut', lvl: 1 });
     const b = e.farmBuffs();
-    expect(b.patience).toBeGreaterThan(b0.patience);
-    expect(b.grow).toBeGreaterThan(b0.grow);
-    expect(b.tip).toBeGreaterThan(b0.tip);
+    expect(b.patience - b0.patience).toBeCloseTo(0.12, 5);
+    expect(b.grow - b0.grow).toBeCloseTo(0.05, 5);
+    expect(b.luck).toBe(b0.luck); // kasir/badut tidak menambah luck
+    expect(e.mods().count / c0).toBeCloseTo(1.05, 5);
+    e.state.crew.hired[0].lvl = 5; // level 5 = x2 kekuatan
+    expect(e.farmBuffs().patience - b0.patience).toBeCloseTo(0.06 * 2 + 0.06, 5);
   });
 });
 
@@ -290,7 +294,7 @@ describe('inventori pet', () => {
     const old = JSON.parse(JSON.stringify(e.state));
     old.v = 6; delete old.pets.book; old.pets.owned.push({ id: 9, kind: 'hoki', rarity: 'rare' });
     const m = migrate(old);
-    expect(m.v).toBe(8);
+    expect(m.v).toBe(9);
     expect(m.pets.book.hoki.rare).toBe(1);
   });
 });
@@ -327,7 +331,7 @@ describe('lahan berlevel dengan daftar penghuni', () => {
     delete old.farm.levels;
     old.farm.slots = [null, { itemId: 'lele', feed: null, plantedAt: 1, readyAt: 2, qty: 6, cost: 5 }, null];
     const m = migrate(old);
-    expect(m.v).toBe(8);
+    expect(m.v).toBe(9);
     expect(m.farm.slots[1].length).toBe(1);
     expect(m.farm.levels).toEqual([1, 3, 1]);
     expect(validateState(m)).toEqual([]);
@@ -403,7 +407,7 @@ describe('pencuri di kolam', () => {
   it('dengan satpam pencuri diusir dan tidak ada yang hilang', () => {
     const e = mkE();
     withLots(e);
-    e.state.staff.satpam = true;
+    e.state.crew.hired.push({ uid: 9, type: 'satpam', lvl: 1 });
     const r = e.resolveThief();
     expect(r.caught).toBe(true);
     expect(e.state.farm.slots[0][0].qty).toBe(3);
@@ -413,7 +417,7 @@ describe('pencuri di kolam', () => {
     const e = mkE();
     withLots(e);
     e.state.farm.habs[0] = 'kandang';
-    e.state.staff.satpam = true;
+    e.state.crew.hired.push({ uid: 9, type: 'satpam', lvl: 1 });
     expect(e.thiefCaught(0)).toBe(false);
     expect(e.resolveThief().stolen).toBe(true);
   });
