@@ -131,8 +131,8 @@ P.openPlot = function openPlot(i) {
     const qty = sel.qty;
     const feedOk = !sel.feed || (fm.feeds[sel.feed] || 0) >= 1;
     const feedLuck = (sel.feed ? FEEDS.find((f) => f.id === sel.feed).luck : 0) + e.farmBuffs().luck * 10;
-    out.push(h('div', { class: 'chips wrap' }, list.map((it) => h('button', { class: `chip${it.id === sel.itemId ? ' on' : ''}`, onClick: () => { sel.itemId = it.id; sel.qty = undefined; this.rerender(); } },
-      svgEl(animalSVG(it), 18), ' ', it.name.split(' ').slice(-1)[0], ` ×${fm.bibit[it.id] || 0}`))));
+    out.push(h('div', { class: 'pick-grid' }, list.map((it) => h('button', { class: `pick${it.id === sel.itemId ? ' on' : ''}`, onClick: () => { sel.itemId = it.id; sel.qty = undefined; this.rerender(); } },
+      svgEl(animalSVG(it), 26), h('span', {}, it.name.split(' ').slice(-1)[0]), h('small', {}, `punya ${fm.bibit[it.id] || 0}`)))));
     out.push(h('div', { class: 'card' },
       h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px' }, svgEl(animalSVG(item), 52),
         h('div', { class: 'grow' }, h('b', {}, item.name), h('div', { class: 'sub' }, `Bibit punya ${have} · tumbuh ${mmss(growMs(e, sel.itemId, sel.feed))}`))),
@@ -145,10 +145,10 @@ P.openPlot = function openPlot(i) {
           h('button', { class: 'qbtn', disabled: qty >= maxQty, onClick: () => { sel.qty = maxQty; this.rerender(); } }, 'Maks')))));
     out.push(h('div', { class: 'card' },
       h('b', {}, 'Pakan (opsional, 1 per hewan)'),
-      h('div', { class: 'chips wrap' },
-        h('button', { class: `chip${!sel.feed ? ' on' : ''}`, onClick: () => { sel.feed = null; sel.qty = undefined; this.rerender(); } }, 'Tanpa'),
-        FEEDS.map((f) => h('button', { class: `chip${sel.feed === f.id ? ' on' : ''}`, onClick: () => { sel.feed = f.id; sel.qty = undefined; this.rerender(); } },
-          svgEl(feedSVG(f), 18), ` ${f.name.replace('Pakan ', '')} ×${fm.feeds[f.id] || 0}`))),
+      h('div', { class: 'pick-grid' },
+        h('button', { class: `pick${!sel.feed ? ' on' : ''}`, onClick: () => { sel.feed = null; sel.qty = undefined; this.rerender(); } }, h('span', {}, 'Tanpa'), h('small', {}, 'gratis')),
+        FEEDS.map((f) => h('button', { class: `pick${sel.feed === f.id ? ' on' : ''}`, onClick: () => { sel.feed = f.id; sel.qty = undefined; this.rerender(); } },
+          svgEl(feedSVG(f), 26), h('span', {}, f.name.replace('Pakan ', '')), h('small', {}, `punya ${fm.feeds[f.id] || 0}`)))),
       h('div', { class: 'sub' }, `Nilai rata-rata ≈ ${expectedMult(feedLuck).toFixed(2)}× harga dasar`),
       oddsBar(feedLuck)));
     if (!have) {
@@ -228,39 +228,44 @@ P.playHarvest = function playHarvest(a) {
 
 // ---------- Pasar ----------
 P.openPasar = function openPasar() {
+  this.pasarTab ||= 'hewan';
   this.openSheet('Pasar', () => {
     const e = this.e;
     const fm = e.state.farm;
     const bal = e.state.ledger.balance;
+    const lvl = e.state.shopLevel || 1;
     this.pasarQty ||= {};
     const q = (k) => this.pasarQty[k] || 1;
     const qty = (k) => h('div', { class: 'qrow' }, [1, 5, 10].map((n) => h('button', { class: `qbtn${q(k) === n ? ' on' : ''}`, onClick: () => { this.pasarQty[k] = n; this.rerender(); } }, `×${n}`)));
-    const out = [h('div', { class: 'sub' }, `Kas ${rp(bal)}. Harga bibit berubah tiap hari.`)];
+    const out = [this.chips([{ id: 'hewan', label: '🐟 Hewan' }, { id: 'pakan', label: '🌾 Pakan' }, { id: 'lisensi', label: '📜 Lisensi' }], this.pasarTab, (id) => { this.pasarTab = id; this.rerender(); }),
+      h('div', { class: 'sub' }, `Kas ${rp(bal)}${this.pasarTab === 'hewan' ? '. Harga bibit berubah tiap hari.' : ''}`)];
 
-    out.push(h('h3', { class: 'sec' }, 'Bibit dan anak hewan'));
-    for (const it of e.unlockedItems()) {
-      const price = e.bibitPrice(it.id);
-      const base = Math.round(it.retail * 0.2);
-      const diff = price - base;
-      const k = `b_${it.id}`;
-      out.push(h('div', { class: 'card item', 'data-cat': it.cat },
-        h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px' }, svgEl(animalSVG(it), 40),
-          h('div', { class: 'grow' }, h('b', {}, it.name), h('div', { class: 'sub' }, `punya ${fm.bibit[it.id] || 0} · tumbuh ${mmss(GROW_SEC[it.tier - 1] * 1000)} · jual dasar ${rp(it.retail)}`)),
-          h('div', { style: 'text-align:right' }, h('div', { class: 'price' }, rp(price)), h('div', { class: `sub ${diff > 0 ? 'up' : diff < 0 ? 'down' : ''}` }, diff === 0 ? 'normal' : `${diff > 0 ? '▲' : '▼'} ${Math.abs(Math.round((diff / base) * 100))}%`))),
-        h('div', { class: 'row' }, qty(k), h('button', { class: 'btn small grow', disabled: bal < price * q(k), onClick: () => this.act(() => e.buyBibit(it.id, q(k)), `Beli ${q(k)} bibit ${it.name}`, 'buy') }, `Beli ${q(k)} · ${rp(price * q(k))}`))));
-    }
-    out.push(h('button', { class: 'btn secondary', onClick: () => this.openSpesies() }, '🐾 Buka spesies baru'));
-
-    out.push(h('h3', { class: 'sec' }, 'Pakan dan pupuk'));
-    out.push(h('div', { class: 'sub' }, 'Makin mahal pakannya, makin besar peluang rarity tinggi, ukuran, dan kecepatan tumbuh.'));
-    for (const f of FEEDS) {
-      const k = `f_${f.id}`;
-      out.push(h('div', { class: 'card' },
-        h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px' }, svgEl(feedSVG(f), 40),
-          h('div', { class: 'grow' }, h('b', {}, f.name), h('div', { class: 'sub' }, `punya ${fm.feeds[f.id] || 0} · tumbuh ${Math.round(f.speed * 100)}% lebih cepat · nilai ≈ ${expectedMult(f.luck).toFixed(2)}×`)),
-          h('span', { class: 'price' }, rp(feedPrice(e, f)))),
-        oddsBar(f.luck),
-        h('div', { class: 'row' }, qty(k), h('button', { class: 'btn small grow', disabled: bal < feedPrice(e, f) * q(k), onClick: () => this.act(() => e.buyFeed(f.id, q(k)), `Beli ${q(k)} ${f.name}`, 'buy') }, `Beli ${q(k)} · ${rp(feedPrice(e, f) * q(k))}`))));
+    if (this.pasarTab === 'hewan') {
+      for (const it of e.unlockedItems()) {
+        const price = e.bibitPrice(it.id);
+        const base = Math.round(it.retail * 0.2);
+        const diff = price - base;
+        const k = `b_${it.id}`;
+        out.push(h('div', { class: 'card item compact', 'data-cat': it.cat },
+          h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:8px' }, svgEl(animalSVG(it), 34),
+            h('div', { class: 'grow' }, h('b', {}, it.name), h('div', { class: 'sub' }, `punya ${fm.bibit[it.id] || 0} · tumbuh ${mmss(GROW_SEC[it.tier - 1] * 1000)}`)),
+            h('div', { style: 'text-align:right' }, h('div', { class: 'price' }, rp(price)), h('div', { class: `sub ${diff > 0 ? 'up' : diff < 0 ? 'down' : ''}` }, diff === 0 ? 'normal' : `${diff > 0 ? '▲' : '▼'} ${Math.abs(Math.round((diff / base) * 100))}%`))),
+          h('div', { class: 'row', style: 'flex-wrap:nowrap' }, qty(k), h('button', { class: 'btn small grow', disabled: bal < price * q(k), onClick: () => this.act(() => e.buyBibit(it.id, q(k)), `Beli ${q(k)} bibit ${it.name}`, 'buy') }, `Beli ${q(k)} · ${rp(price * q(k))}`))));
+      }
+    } else if (this.pasarTab === 'pakan') {
+      out.push(h('div', { class: 'sub' }, 'Pakan mahal dibuka bertahap menurut level toko. Makin bagus pakannya, makin besar peluang rarity tinggi, ukuran, dan kecepatan tumbuh.'));
+      for (const f of FEEDS) {
+        const k = `f_${f.id}`;
+        const open = lvl >= f.needShop;
+        out.push(h('div', { class: `card compact${open ? '' : ' dim'}` },
+          h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:8px' }, svgEl(feedSVG(f), 34, open ? '' : 'locked'),
+            h('div', { class: 'grow' }, h('b', {}, f.name), h('div', { class: 'sub' }, open ? `punya ${fm.feeds[f.id] || 0} · tumbuh ${Math.round(f.speed * 100)}% lebih cepat · ≈ ${expectedMult(f.luck).toFixed(2)}×` : `🔒 Dibuka di Toko Lv ${f.needShop}`)),
+            h('span', { class: 'price' }, rp(feedPrice(e, f)))),
+          open ? [oddsBar(f.luck), h('div', { class: 'row', style: 'flex-wrap:nowrap' }, qty(k), h('button', { class: 'btn small grow', disabled: bal < feedPrice(e, f) * q(k), onClick: () => this.act(() => e.buyFeed(f.id, q(k)), `Beli ${q(k)} ${f.name}`, 'buy') }, `Beli ${q(k)} · ${rp(feedPrice(e, f) * q(k))}`))] : null));
+      }
+    } else {
+      out.push(h('div', { class: 'sub' }, 'Lisensi membuka spesies baru. Jenis tier rendah murah, tier tinggi mahal.'));
+      out.push(h('button', { class: 'btn', onClick: () => this.openSpesies() }, '🐾 Buka daftar lisensi spesies'));
     }
     return out;
   });

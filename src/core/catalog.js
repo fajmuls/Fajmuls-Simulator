@@ -289,6 +289,9 @@ export const UPKEEP_PER_ANIMAL = 6; // perawatan harian per ekor hewan di stok
 export const UPKEEP_SHOP_STEP = 0.15; // tambahan per level toko di atas 1
 export const SICK_CHANCE = 0.012; // peluang hewan mati/sakit per ekor per hari
 export const THEFT_CHANCE = 0.04; // peluang pencurian per pelanggan (mulai hari ke-5)
+export const THIEF_FROM_DAY = 4; // pencuri mulai muncul di kolam pada hari ini
+export const THIEF_DAY_CHANCE = 0.4; // peluang ada pencuri pada hari tertentu
+export const THIEF_CATCH_SATPAM = 0.92; // peluang satpam yang berjaga di kolam mengusir pencuri
 export const TAX_BRACKETS = [ // pajak progresif atas omzet harian
   { from: 60000, rate: 0.05 },
   { from: 200000, rate: 0.09 },
@@ -300,6 +303,11 @@ export const WEALTH_TAX_RATE = 0.003;
 // ---------- Penyetelan laju ekonomi (v8): biaya kemajuan dinaikkan agar uang tidak terlalu cepat ----------
 export const PROGRESS_COST_SCALE = 2.2;
 const scaleCost = (n) => (n > 0 ? Math.max(500, Math.round((n * PROGRESS_COST_SCALE) / 500) * 500) : 0);
-for (const it of ITEMS) it.unlockCost = scaleCost(it.unlockCost);
+// Lisensi tier 1-2 murah supaya jenis awal tetap terpakai; tier atas tetap mahal.
+const LICENSE_TIER_SCALE = { 1: 1, 2: 0.55, 3: 1.4, 4: PROGRESS_COST_SCALE, 5: PROGRESS_COST_SCALE };
+for (const it of ITEMS) {
+  const k = LICENSE_TIER_SCALE[it.tier] ?? PROGRESS_COST_SCALE;
+  it.unlockCost = it.unlockCost > 0 ? Math.max(500, Math.round((it.unlockCost * k) / 500) * 500) : 0;
+}
 for (const lv of SHOP_LEVELS) lv.cost = scaleCost(lv.cost);
 for (const up of UPGRADES) up.costs = up.costs.map(scaleCost);

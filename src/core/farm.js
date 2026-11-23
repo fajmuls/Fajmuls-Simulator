@@ -18,12 +18,14 @@ export const rarityIdx = (id) => RARITIES.findIndex((r) => r.id === id);
 
 // luck menggeser bobot ke rarity yang lebih tinggi; size = dorongan ukuran; speed = percepatan tumbuh
 export const FEEDS = [
-  { id: 'dedak', name: 'Pakan Dasar', price: 60, luck: 0.5, size: 0.1, speed: 0.05, color: '#a16207' },
-  { id: 'bagus', name: 'Pakan Bagus', price: 250, luck: 1.3, size: 0.2, speed: 0.1, color: '#16a34a' },
-  { id: 'premium', name: 'Pakan Premium', price: 1000, luck: 2.8, size: 0.35, speed: 0.15, color: '#2563eb' },
-  { id: 'super', name: 'Pakan Super', price: 4500, luck: 5, size: 0.5, speed: 0.22, color: '#9333ea' },
-  { id: 'dewa', name: 'Pakan Dewa', price: 20000, luck: 9, size: 0.7, speed: 0.3, color: '#f59e0b' },
+  { id: 'dedak', name: 'Pakan Dasar', price: 60, luck: 0.5, size: 0.1, speed: 0.05, color: '#a16207', needShop: 1 },
+  { id: 'bagus', name: 'Pakan Bagus', price: 250, luck: 1.3, size: 0.2, speed: 0.1, color: '#16a34a', needShop: 2 },
+  { id: 'premium', name: 'Pakan Premium', price: 1000, luck: 2.8, size: 0.35, speed: 0.15, color: '#2563eb', needShop: 3 },
+  { id: 'super', name: 'Pakan Super', price: 4500, luck: 5, size: 0.5, speed: 0.22, color: '#9333ea', needShop: 4 },
+  { id: 'dewa', name: 'Pakan Dewa', price: 20000, luck: 9, size: 0.7, speed: 0.3, color: '#f59e0b', needShop: 5 },
 ];
+// Pakan dibuka bertahap menurut level toko, jadi pakan murah tetap terpakai di awal.
+export const feedOpen = (e, f) => (e.state.shopLevel || 1) >= f.needShop;
 export const getFeed = (id) => {
   const f = FEEDS.find((x) => x.id === id);
   if (!f) throw new Error('Pakan tidak dikenal');
@@ -183,6 +185,7 @@ export function buyBibit(e, itemId, n) {
 export function buyFeed(e, feedId, n) {
   const f = getFeed(feedId);
   if (!Number.isInteger(n) || n < 1) throw new Error('Jumlah tidak valid');
+  if (!feedOpen(e, f)) throw new Error(`${f.name} dibuka di Toko Lv ${f.needShop}`);
   const unit = feedPrice(e, f);
   debit(e.state.ledger, e.state.day, 'buy_stock', unit * n, `Beli ${n} ${f.name}`);
   const fe = farmOf(e).feeds;

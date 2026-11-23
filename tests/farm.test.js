@@ -14,6 +14,7 @@ describe('peternakan', () => {
     const { e, clock } = mk();
     credit(e.state.ledger, 1, 'reward', 1_000_000, 'modal tes');
     e.upgradeSpot(1); e.upgradeSpot(1); // Lv3 = muat 6
+    e.state.shopLevel = 2;
     e.buyBibit('lele', 6);
     e.buyFeed('bagus', 6);
     expect(() => e.plant(1, 'lele', null, 7)).toThrow();
@@ -74,6 +75,8 @@ describe('peternakan', () => {
   it('pakan dipakai satu per tanam dan harus dibeli dulu', () => {
     const { e } = mk();
     expect(() => e.plant(0, 'cacing', 'bagus')).toThrow();
+    expect(() => e.buyFeed('bagus', 2)).toThrow(/Toko Lv 2/); // dibuka bertahap
+    e.state.shopLevel = 2;
     e.buyFeed('bagus', 2);
     e.buyBibit('cacing', 1);
     e.plant(0, 'cacing', 'bagus');
@@ -328,5 +331,96 @@ describe('lahan berlevel dengan daftar penghuni', () => {
     expect(m.farm.slots[1].length).toBe(1);
     expect(m.farm.levels).toEqual([1, 3, 1]);
     expect(validateState(m)).toEqual([]);
+  });
+});
+
+describe('pakan dan lisensi bertahap', () => {
+  it('pakan dibuka menurut level toko', () => {
+    const { e } = mk();
+    credit(e.state.ledger, 1, 'reward', 1_000_000, 'modal tes');
+    e.buyFeed('dedak', 1);
+    for (const [id, lv] of [['bagus', 2], ['premium', 3], ['super', 4], ['dewa', 5]]) {
+      e.state.shopLevel = lv - 1;
+      expect(() => e.buyFeed(id, 1), `${id} Lv${lv - 1}`).toThrow();
+      e.state.shopLevel = lv;
+      e.buyFeed(id, 1);
+    }
+  });
+  it('lisensi tier 2 murah, tier 3 ke atas bertahap lebih mahal', async () => {
+    const { ITEMS } = await import('../src/core/catalog.js');
+    const t2 = ITEMS.filter((i) => i.tier === 2 && i.unlockCost > 0);
+    const t3 = ITEMS.filter((i) => i.tier === 3 && i.unlockCost > 0);
+    const t5 = ITEMS.filter((i) => i.tier === 5 && i.unlockCost > 0);
+    expect(Math.max(...t2.map((i) => i.unlockCost))).toBeLessThanOrEqual(12000);
+    expect(Math.min(...t3.map((i) => i.unlockCost))).toBeGreaterThan(Math.max(...t2.map((i) => i.unlockCost)));
+    expect(Math.min(...t5.map((i) => i.unlockCost))).toBeGreaterThan(Math.max(...t3.map((i) => i.unlockCost)));
+  });
+});
+
+describe('pencuri di kolam', () => {
+  const mkE = (day = 10) => {
+    const e = new GameEngine(newState('thief-seed'));
+    e.state.day = day;
+    return e;
+  };
+  it('tidak ada pencuri sebelum hari 4, dan rencana deterministik', () => {
+    const e = mkE(2);
+    expect(e.thiefPlan(3)).toBeNull();
+    const a = e.thiefPlan(12);
+    const b = e.thiefPlan(12);
+    expect(b).toEqual(a);
+  });
+  it('sebagian hari ada pencuri, sebagian tidak', () => {
+    const e = mkE();
+    let n = 0;
+    for (let d = 4; d < 104; d++) if (e.thiefPlan(d)) n += 1;
+    expect(n).toBeGreaterThan(20);
+    expect(n).toBeLessThan(65);
+  });
+  const withLots = (e) => {
+    const fm = e.state.farm;
+    fm.habs[0] = 'kolam';
+    fm.slots[0] = [{ itemId: 'lele', feed: null, plantedAt: 0, readyAt: 1e12, qty: 3, cost: 900 }];
+    e.today = { thief: { at: 0.5, pick: 0, pick2: 0, caughtRoll: 0.5, done: false }, thefts: [], chased: 0 };
+  };
+  it('tanpa satpam satu ekor hilang dari lahan', () => {
+    const e = mkE();
+    withLots(e);
+    const r = e.resolveThief();
+    expect(r.stolen).toBe(true);
+    expect(e.state.farm.slots[0][0].qty).toBe(2);
+    expect(e.state.farm.slots[0][0].cost).toBe(600);
+    expect(e.today.thefts).toEqual([{ itemId: 'lele', n: 1 }]);
+    expect(e.resolveThief()).toBeNull(); // sekali saja
+  });
+  it('lot terakhir yang dicuri dihapus', () => {
+    const e = mkE();
+    withLots(e);
+    e.state.farm.slots[0][0].qty = 1;
+    e.resolveThief();
+    expect(e.state.farm.slots[0]).toEqual([]);
+  });
+  it('dengan satpam pencuri diusir dan tidak ada yang hilang', () => {
+    const e = mkE();
+    withLots(e);
+    e.state.staff.satpam = true;
+    const r = e.resolveThief();
+    expect(r.caught).toBe(true);
+    expect(e.state.farm.slots[0][0].qty).toBe(3);
+    expect(e.today.chased).toBe(1);
+  });
+  it('satpam hanya menjaga kolam, kandang tidak terlindungi', () => {
+    const e = mkE();
+    withLots(e);
+    e.state.farm.habs[0] = 'kandang';
+    e.state.staff.satpam = true;
+    expect(e.thiefCaught(0)).toBe(false);
+    expect(e.resolveThief().stolen).toBe(true);
+  });
+  it('tanpa penghuni tidak ada yang dicuri', () => {
+    const e = mkE();
+    withLots(e);
+    e.state.farm.slots[0] = [];
+    expect(e.resolveThief()).toEqual({ none: true });
   });
 });

@@ -4,7 +4,7 @@ import './style.css';
 import { GameEngine, newState } from './core/engine.js';
 import { SaveManager, serialize, deserialize } from './core/save.js';
 import { WorldScene } from './game/WorldScene.js';
-import { UI, toast, h } from './ui.js';
+import { UI, toast, h, getA11y } from './ui.js';
 import './screens.js';
 import './farmscreens.js';
 import './storyscreens.js';
@@ -108,6 +108,11 @@ async function boot() {
     onHub: (hub) => ui.setHub(hub),
     onTapPlot: (info) => ui.tapPlot(info),
     onTapBuilding: (id) => ui.tapBuilding(id),
+    onThief: (info) => {
+      if (info.phase === 'arrive') toast(info.caught ? 'Pencuri menyelinap ke kolam, tapi satpam berjaga' : 'Ada pencuri menuju lahanmu!', info.caught ? 'ok' : 'err');
+      else if (info.phase === 'caught') toast('Satpam mengusir pencuri. Tidak ada yang hilang', 'ok');
+      else if (info.phase === 'stolen') toast('Pencuri berhasil mengambil seekor hewan. Sewa satpam untuk menjaga kolam', 'err');
+    },
     onDayEnd: (summary) => {
       persist();
       ui.showDaySummary(summary);
@@ -115,7 +120,8 @@ async function boot() {
   });
 
   const host = document.getElementById('game');
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const eco = getA11y().eco;
+  const dpr = Math.min(window.devicePixelRatio || 1, eco ? 1 : 1.5);
   const size = () => ({ w: Math.max(2, Math.round(host.clientWidth * dpr)), h: Math.max(2, Math.round(host.clientHeight * dpr)) });
   const first = size();
   const game = new Phaser.Game({
@@ -125,10 +131,18 @@ async function boot() {
     height: first.h,
     backgroundColor: '#8fd36f',
     audio: { noAudio: true },
+    fps: eco ? { limit: 30 } : undefined,
     render: { antialias: true, pixelArt: false, roundPixels: false },
     scale: { mode: Phaser.Scale.NONE, zoom: 1 / dpr },
     scene: world,
   });
+  // Bila perangkat kewalahan (FPS rendah beberapa kali berturut-turut), batasi ke 30 FPS agar stabil dan hemat baterai.
+  let slow = 0;
+  setInterval(() => {
+    if (document.hidden || game.loop.hasFpsLimit) return;
+    slow = game.loop.actualFps < 38 ? slow + 1 : 0;
+    if (slow >= 4) game.loop.setFPSLimit(30);
+  }, 2500);
   const onResize = () => { const sz = size(); game.scale.setZoom(1 / dpr); game.scale.resize(sz.w, sz.h); };
   new ResizeObserver(onResize).observe(host);
 

@@ -4,7 +4,7 @@ import {
   SHARE_MIN_PRICE, SHARE_SELL_FEE, SHARE_HISTORY, PROPERTY_SELL_RATE, LOAN_TERMS, LOAN_MIN, LOAN_STEP,
   LOAN_MAX_ACTIVE, LOAN_LATE_FEE, BREED_FEE_RATE, BREED_BASE_SLOTS, SKILL_POINT_EVERY_DAYS, SKILL_POINT_EVERY_FULL_DAYS,
   BASE_CAPACITY, CAPACITY_PER_RAK, BASE_MAX_QUALITY, START_CASH, DAILY_RENT,
-  SPEED_STEPS, UPKEEP_PER_ANIMAL, UPKEEP_SHOP_STEP, SICK_CHANCE, THEFT_CHANCE, TAX_BRACKETS, WEALTH_TAX_FROM, WEALTH_TAX_RATE,
+  SPEED_STEPS, UPKEEP_PER_ANIMAL, UPKEEP_SHOP_STEP, SICK_CHANCE, THEFT_CHANCE, THIEF_FROM_DAY, THIEF_DAY_CHANCE, THIEF_CATCH_SATPAM, TAX_BRACKETS, WEALTH_TAX_FROM, WEALTH_TAX_RATE,
   getItem, getCategory, getQuality, getUpgrade, getSkill, getPotion, getStaff, getShare, getProperty,
   lotKey, parseLotKey, starsFor,
 } from './catalog.js';
@@ -977,7 +977,7 @@ export class GameEngine {
     if (this.state.autoPrice.on) this.setAllPrices(this.state.autoPrice.pct);
     this.plan = this.generatePlan();
     this.reserved.clear();
-    this.today = { revenue: 0, cogs: 0, customers: this.plan.length, served: 0, lost: 0, soldUnits: 0, tips: 0, regulars: [] };
+    this.today = { revenue: 0, cogs: 0, customers: this.plan.length, served: 0, lost: 0, soldUnits: 0, tips: 0, regulars: [], thief: this.thiefPlan(this.state.day), thefts: [], chased: 0 };
     this.state.phase = 'open';
     return this.plan;
   }
@@ -1152,7 +1152,7 @@ export class GameEngine {
 
     // Kerugian stok: hewan sakit/mati dan pencurian (nilai modal keluar dari stok, tidak menyentuh kas).
     const died = this._applySickness(day);
-    const stolen = this._applyTheft(day, this.today.customers);
+    const stolen = [...this._applyTheft(day, this.today.customers), ...(this.today.thefts || [])];
 
     // Pemasukan pasif lebih dulu: properti dan deposito yang jatuh tempo.
     const propIncome = this.propertyIncome();
@@ -1239,6 +1239,7 @@ export class GameEngine {
       tax: taxDue,
       died,
       stolen,
+      chased: this.today.chased || 0,
       propIncome,
       depositReturn,
       depositInterest,
@@ -1346,6 +1347,65 @@ export class GameEngine {
       out[itemId] = (out[itemId] || 0) + 1;
     }
     return Object.entries(out).map(([itemId, n]) => ({ itemId, n }));
+  }
+
+  // ---------- Pencuri di kolam ----------
+  // Rencana hari ini ditentukan seed: kapan datang (pecahan hari) dan angka acak untuk memilih sasaran dan hasil.
+  thiefPlan(day = this.state.day) {
+    if (day < THIEF_FROM_DAY) return null;
+    const rng = mulberry32(hashSeed(this.state.seed, 'thief', day));
+    if (rng() >= THIEF_DAY_CHANCE) return null;
+    return { at: 0.2 + rng() * 0.55, pick: rng(), pick2: rng(), caughtRoll: rng(), done: false };
+  }
+
+  // Lahan kolam yang berpenghuni (sasaran pencuri). Cadangan: lahan apa pun yang berpenghuni.
+  thiefTargets() {
+    const fm = this.state.farm;
+    const occupied = (i) => (fm.slots[i] || []).some((l) => (l.qty ?? 1) > 0);
+    const kolam = fm.habs.map((h, i) => (h === 'kolam' && occupied(i) ? i : -1)).filter((i) => i >= 0);
+    if (kolam.length) return kolam;
+    return fm.habs.map((_, i) => (occupied(i) ? i : -1)).filter((i) => i >= 0);
+  }
+
+  thiefPreview() {
+    const plan = this.today?.thief;
+    if (!plan || plan.done) return null;
+    const t = this.thiefTargets();
+    return t.length ? { slot: t[Math.floor(plan.pick * t.length)] } : null;
+  }
+
+  guardOn() { return !!this.state.staff.satpam; }
+
+  // Satpam hanya menjaga kolam. Pencuri yang menuju lahan lain tidak terhalang.
+  thiefCaught(slot) {
+    const plan = this.today?.thief;
+    return !!plan && this.guardOn() && this.state.farm.habs[slot] === 'kolam' && plan.caughtRoll < THIEF_CATCH_SATPAM;
+  }
+
+  // Pencuri sampai di sasaran: satpam mengusir, atau satu ekor hilang dari lahan itu.
+  resolveThief() {
+    const plan = this.today?.thief;
+    if (!plan || plan.done) return null;
+    plan.done = true;
+    const t = this.thiefTargets();
+    if (!t.length) return { none: true };
+    const slot = t[Math.floor(plan.pick * t.length)];
+    if (this.thiefCaught(slot)) {
+      this.today.chased = (this.today.chased || 0) + 1;
+      return { caught: true, slot };
+    }
+    const lots = this.state.farm.slots[slot].filter((l) => (l.qty ?? 1) > 0);
+    const lot = lots[Math.floor(plan.pick2 * lots.length)];
+    lot.qty = lot.qty ?? 1;
+    const unit = Math.round((lot.cost || 0) / Math.max(1, lot.qty));
+    lot.qty -= 1;
+    lot.cost = Math.max(0, (lot.cost || 0) - unit);
+    if (lot.qty <= 0) this.state.farm.slots[slot] = this.state.farm.slots[slot].filter((l) => l !== lot);
+    this.state.stats.stolen = (this.state.stats.stolen || 0) + 1;
+    const itemId = lot.itemId;
+    const row = this.today.thefts.find((x) => x.itemId === itemId);
+    if (row) row.n += 1; else this.today.thefts.push({ itemId, n: 1 });
+    return { stolen: true, slot, itemId, loss: unit };
   }
 
   canSave() {

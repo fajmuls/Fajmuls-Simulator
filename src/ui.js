@@ -66,7 +66,7 @@ export function toast(msg, kind = '') {
 
 const A11Y_KEY = 'pasarsatwa_a11y';
 export function getA11y() {
-  try { return { big: false, contrast: false, ...JSON.parse(localStorage.getItem(A11Y_KEY) || '{}') }; } catch { return { big: false, contrast: false }; }
+  try { return { big: false, contrast: false, eco: false, ...JSON.parse(localStorage.getItem(A11Y_KEY) || '{}') }; } catch { return { big: false, contrast: false }; }
 }
 export function applyA11y() {
   const a = getA11y();
@@ -143,10 +143,7 @@ export class UI {
     this.fEvent = h('button', { class: 'fchip', onClick: () => this.openEvent() });
     this.fStory = h('button', { class: 'fchip', onClick: () => this.openNpc() });
     this.fReady = h('button', { class: 'fchip ready', style: 'display:none', onClick: () => this.harvestAllUI() });
-    this.fNavL = h('button', { class: 'round big navl', 'aria-label': 'Ke Kolam', onClick: () => this.ctx.scene()?.travelTo('kolam') }, '◀');
-    this.fNavR = h('button', { class: 'round big navr', 'aria-label': 'Ke Kandang', onClick: () => this.ctx.scene()?.travelTo('kandang') }, '▶');
-    this.fNavLab = h('div', { class: 'navlab' }, 'Geser kiri/kanan');
-    fl.append(h('div', { class: 'fcol' }, this.fQuest, this.fEvent, this.fStory, this.fReady), this.fNavL, this.fNavR);
+    fl.append(h('div', { class: 'fcol' }, this.fQuest, this.fEvent, this.fStory, this.fReady));
   }
 
   // ---------- Ambil hewan dari rak ----------
@@ -283,7 +280,6 @@ export class UI {
   setHub(id) {
     for (const [k, b] of Object.entries(this.tabs)) b.classList.toggle('on', b.dataset.hub === id && k !== 'menu');
     this.view = id;
-    if (this.fNavL) { const k = id === 'kebun' && this.e.state.phase !== 'open'; this.fNavL.style.display = k ? '' : 'none'; this.fNavR.style.display = k ? '' : 'none'; }
   }
 
   refreshHud(tick) {
@@ -336,15 +332,19 @@ export class UI {
   // ---------- Dock ----------
   buildDock() {
     const dock = document.getElementById('dock');
-    const lock = (fn) => () => {
-      if (this.e.state.phase === 'open') { toast('Toko sedang buka. Tutup toko dulu untuk pindah layar.', 'err'); return; }
-      fn();
+    // Tab = karakter berjalan ke tempat itu (boleh saat toko buka).
+    const go = (spot, then) => () => { this.closeModal(); const sc = this.ctx.scene(); if (sc) sc.travelTo(spot, then); else then?.(); };
+    const kebun = () => {
+      this.closeModal();
+      const sc = this.ctx.scene();
+      const p = sc?.playerPos();
+      sc?.travelTo(p && p.x < 700 && sc.currentHub() === 'kebun' ? 'kandang' : 'kolam');
     };
     const defs = [
-      ['pasar', 'pasar', 'Pasar', null, lock(() => this.openPasar())],
-      ['kebun', 'kolam', 'Kebun', 'kebun', lock(() => { this.closeModal(); this.ctx.travel('kolam'); })],
-      ['toko', 'toko', 'Toko', 'toko', () => { this.closeModal(); this.ctx.travel('toko'); }],
-      ['pet', 'pet', 'Pet', null, lock(() => this.openPet())],
+      ['pasar', 'pasar', 'Pasar', null, go('pasar', () => this.openPasar())],
+      ['kebun', 'kolam', 'Kebun', 'kebun', kebun],
+      ['toko', 'toko', 'Toko', 'toko', go('toko')],
+      ['pet', 'pet', 'Pet', null, go('pet', () => this.openPet())],
       ['menu', 'menu', 'Menu', null, () => this.openMenu()],
     ];
     const tabs = h('div', { class: 'dock-tabs' });
@@ -375,8 +375,6 @@ export class UI {
     if (this.speed > this.e.maxSpeed()) this.speed = this.e.maxSpeed();
     this.goBtn.replaceChildren(svgEl(statIconSVG(open ? 'stop' : 'play'), 22), h('span', {}, open ? 'Tutup Toko' : `Buka Toko · Hari ${this.e.state.day}`));
     this.goBtn.classList.toggle('stop', open);
-    for (const k of ['pasar', 'kebun', 'pet']) this.tabs[k]?.classList.toggle('locked', open);
-    if (this.fNavL && this.view === 'kebun') { this.fNavL.style.display = open ? 'none' : ''; this.fNavR.style.display = open ? 'none' : ''; }
     this.speedBtn.textContent = this.speed === 0 ? 'Jeda' : `${this.speed}x`;
   }
 
@@ -393,7 +391,6 @@ export class UI {
       this.closeModal();
       this.speed = this.speed === 0 ? 1 : this.speed;
       this.ctx.openShop();
-      this.ctx.scene()?.travelTo('toko');
       audio.play('open');
       const ev = this.e.eventOf();
       if (ev.id !== 'cerah') toast(`Event hari ini: ${ev.name}. ${ev.desc || ''}`, 'ok');
@@ -413,6 +410,7 @@ export class UI {
     const overlay = h('div', { class: 'overlay', onClick: (ev) => { if (ev.target === overlay) this.closeModal(); } }, sheet);
     document.getElementById('modal-root').append(overlay);
     this.modal = { overlay, sheet, body, pager, render, page: 0, pages: 1 };
+    if (this.e.state.phase === 'open') { this.ctx.scene()?.setPaused(true); this.pickerOpen = true; }
     this.rerender();
   }
 
@@ -544,6 +542,13 @@ export class UI {
           summary.regulars.map((r) => h('div', { class: 'sub' }, `${r.icon} ${r.name}: ${r.requested ? (r.fulfilled ? 'permintaan terpenuhi' : 'permintaan tidak terpenuhi') : 'belanja'} · +${r.bondGain} kedekatan${r.tip ? ` · tip ${rp(r.tip)}` : ''}${r.levelUp ? ' · 🎉 naik level!' : ''}`)),
           h('button', { class: 'btn small secondary', onClick: () => { this.closeModal(); this.openLangganan(); } }, 'Buka Buku Langganan')));
       }
+      if (summary.stolen?.length || summary.chased) {
+        const lost = (summary.stolen || []).map((x) => `${x.n} ${getItem(x.itemId).name}`).join(', ');
+        out.push(h('div', { class: 'card' }, h('b', {}, '🦹 Pencuri'),
+          lost ? h('div', { class: 'sub bad' }, `Hilang dari lahan: ${lost}`) : null,
+          summary.chased ? h('div', { class: 'sub' }, `💂 Satpam mengusir ${summary.chased} pencuri`) : null,
+          !lost && !summary.chased ? null : (e.state.staff.satpam ? null : h('div', { class: 'sub' }, 'Sewa Satpam di Menu > Karyawan untuk menjaga kolam.'))));
+      }
       const hints = [];
       const ready = e.state.farm.slots.filter((_, i) => e.spotReady(i) > 0).length;
       if (ready) hints.push(`🌱 ${ready} kolam siap dipanen`);
@@ -626,6 +631,7 @@ export class UI {
         h('div', { class: 'card' }, h('b', {}, 'Tampilan'),
           h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: getA11y().big, onChange: (ev) => setA11y({ big: ev.target.checked }) }), 'Huruf besar'),
           h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: getA11y().contrast, onChange: (ev) => setA11y({ contrast: ev.target.checked }) }), 'Kontras tinggi'),
+          h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: getA11y().eco, onChange: (ev) => { setA11y({ eco: ev.target.checked }); toast('Mode hemat berlaku setelah aplikasi dimuat ulang', 'ok'); } }), 'Mode hemat baterai (30 FPS, gambar lebih ringan)'),
           installEvt ? h('button', { class: 'btn secondary small', onClick: async () => { installEvt.prompt(); await installEvt.userChoice; installEvt = null; this.rerender(); } }, 'Pasang aplikasi di layar utama') : h('div', { class: 'sub' }, 'Untuk memasang: gunakan menu browser "Tambahkan ke layar utama".'),
           h('button', { class: 'btn secondary small', onClick: () => { this.e.state.tutorial = { step: 0, done: false }; this.closeModal(); this.startTutorial(); } }, 'Ulangi tutorial')),
         h('div', { class: 'card' }, h('b', {}, 'Simpan'),

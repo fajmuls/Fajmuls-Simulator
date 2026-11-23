@@ -8,40 +8,17 @@ import { hashSeed, mulberry32 } from '../core/rng.js';
 import { regularDef } from '../core/regulars.js';
 import { PET_KINDS } from '../core/farm.js';
 import { storyNow } from '../core/story.js';
+import {
+  WORLD, BOX, GATES, PLOTS, PLOT_SIZE, plotFront, RACK_Y, rackX, QUEUE_Y, ROAD_Y, ENTRY_X, slotX, COUNTER, SPOTS, ROADS, BUILDINGS,
+  decorSpots, buildNav, zoneOf, fenceRects, shopWalls,
+} from './worldmap.js';
 
-export const WORLD = { w: 1400, h: 1000 };
-const BASE_VIEW_W = 440; // lebar pandang (satuan dunia) pada zoom 1
+export { WORLD };
+const VIEW_W = 520; // lebar pandang (satuan dunia) pada layar sempit
+const VIEW_MIN_H = 380; // tinggi pandang minimum pada layar lebar
+const BAKE = 1.5; // skala tekstur tanah
 const FONT = "'Trebuchet MS','Segoe UI',system-ui,sans-serif";
 
-// pusat kamera dan titik berdiri pemain untuk tiap hub
-export const HUBS = {
-  kolam: { name: 'Kolam & Kebun', zoom: 0.8, x: 320, y: 250, spot: { x: 330, y: 445 } },
-  kandang: { name: 'Kandang', zoom: 0.8, x: 1090, y: 250, spot: { x: 1090, y: 445 } },
-  pasar: { name: 'Pasar', x: 250, y: 690, spot: { x: 250, y: 770 } },
-  pet: { name: 'Rumah Pet', x: 1150, y: 690, spot: { x: 1150, y: 770 } },
-  toko: { name: 'Toko', zoom: 0.85, x: 700, y: 760, spot: { x: 700, y: 850 } },
-  plaza: { name: 'Alun-alun', x: 700, y: 330, spot: { x: 700, y: 450 } },
-};
-
-// Layar: Kebun (kolam + kandang, digeser kiri-kanan) dan Toko (terkunci saat buka).
-export const VIEWS = {
-  kebun: { x: 0, y: 0, w: 1400, h: 530, fit: 'h' },
-  toko: { x: 455, y: 520, w: 490, h: 450, fit: 'w' },
-};
-
-const PLOTS = {
-  kolam: [[130, 150], [320, 150], [130, 300], [320, 300]],
-  kebun: [[480, 160], [480, 275]],
-  kandang: [[930, 175], [1070, 175], [1210, 175], [1000, 335], [1140, 335]],
-};
-const PLOT_SIZE = { kolam: [170, 112], kebun: [120, 84], kandang: [112, 126] };
-
-const RACK_Y = 795;
-const rackX = (i) => 532 + i * 84;
-const QUEUE_Y = 928;
-const ROAD_Y = 948;
-const ENTRY_X = 420;
-const slotX = (k) => 812 - k * 56;
 const WALK_SPEED = 70;
 const PLAYER_SPEED = 230;
 
@@ -51,7 +28,7 @@ const TITLE = { biasa: '', pelit: 'Si ', vip: 'Tuan ', kolektor: 'Kolektor ' };
 export const customerName = (id, type) => `${TITLE[type] || ''}${NAMES[hashSeed(`n${id}`) % NAMES.length]}`;
 
 const T = (scene, x, y, str, size = 12, color = '#3b2a1c', extra = {}) => scene.add.text(x, y, str, {
-  fontFamily: FONT, fontSize: `${size}px`, color, fontStyle: 'bold', resolution: 3, ...extra,
+  fontFamily: FONT, fontSize: `${size}px`, color, fontStyle: 'bold', resolution: 2, ...extra,
 }).setOrigin(0.5);
 
 export class WorldScene extends Phaser.Scene {
@@ -70,17 +47,17 @@ export class WorldScene extends Phaser.Scene {
     this.fxList = [];
     this.paused = false;
     this.carry = null;
-    this.playerTarget = null;
-    this.uz = 1;
-    this.camGoal = null;
-    this.follow = false;
+    this.path = [];
+    this.pathThen = null;
     this.rackSprites = [];
     this.plots = [];
     this.petSprites = [];
     this.staffSprites = {};
     this._lastTick = '';
-    this._lastHub = '';
+    this._zone = '';
+    this._zoneT = 0;
     this._acc = 0;
+    this.lowFx = false;
   }
 
   // ---------- Memuat gambar ----------
@@ -124,21 +101,26 @@ export class WorldScene extends Phaser.Scene {
 
   create() {
     this.cameras.main.setBackgroundColor('#8fd36f');
-    this._buildGround();
+    this.nav = buildNav();
+    this.decor = decorSpots();
+    this._bakeGround();
     this._buildHubs();
 
-    this.player = this.add.image(HUBS.toko.spot.x, HUBS.toko.spot.y, 'player').setOrigin(0.5, 1).setScale(0.5 * 1.2);
+    const st = SPOTS.start;
+    this.player = this.add.image(st.x, st.y, 'player').setOrigin(0.5, 1);
     this.player.setDisplaySize(44, 68);
-    this.playerY = HUBS.toko.spot.y;
+    this.playerY = st.y;
     this.playerBob = 0;
 
     this.tint = this.add.rectangle(0, 0, 4000, 4000, 0xff8a3d, 0).setOrigin(0).setScrollFactor(0).setDepth(20000);
     this.rainG = this.add.graphics().setScrollFactor(0).setDepth(20001);
-    this.rain = Array.from({ length: 60 }, () => ({ x: Math.random(), y: Math.random(), s: 0.6 + Math.random() * 0.8 }));
+    this.rain = Array.from({ length: 40 }, () => ({ x: Math.random(), y: Math.random(), s: 0.6 + Math.random() * 0.8 }));
 
     this._setupInput();
-    this.scale.on('resize', () => { const c = this.cameras.main; const cx = c.scrollX + c.width / 2 / c.zoom; const cy = c.scrollY + c.height / 2 / c.zoom; this._fitCamera(); c.centerOn(cx, cy); });
-    this.setView('kebun', HUBS.kolam.x);
+    this._fitCamera();
+    this.camPos = { x: st.x, y: st.y - 40 };
+    this.cameras.main.centerOn(this.camPos.x, this.camPos.y);
+    this.scale.on('resize', () => { this._fitCamera(); this._clampCam(); this.cameras.main.centerOn(this.camPos.x, this.camPos.y); });
     this.refreshShelves();
     this.hooks.onReady?.(this);
   }
@@ -146,153 +128,136 @@ export class WorldScene extends Phaser.Scene {
   // ---------- Kamera dan input ----------
   _fitCamera() {
     const cam = this.cameras.main;
-    const v = VIEWS[this.view || 'kebun'];
-    const z = v.fit === 'h' ? this.scale.height / v.h : this.scale.width / v.w;
-    this.baseZoom = z;
-    this.uz = 1;
-    cam.setBounds(v.x, v.y, v.w, v.h);
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const z = Math.max(Math.min(w / VIEW_W, h / VIEW_MIN_H), h / WORLD.h, w / WORLD.w);
+    cam.setBounds(0, 0, WORLD.w, WORLD.h);
     cam.setZoom(z);
-    this.tint.setSize(this.scale.width, this.scale.height);
+    this.baseZoom = z;
+    this.tint.setSize(w, h);
   }
 
-  setView(id, focusX = null) {
-    const first = !this.view;
-    if (!VIEWS[id]) return;
-    this.view = id;
-    this.camGoal = null;
-    this._fitCamera();
+  _clampCam() {
     const cam = this.cameras.main;
-    const v = VIEWS[id];
-    if (id === 'kebun') cam.centerOn(focusX ?? this._kebunX ?? HUBS.kolam.x, v.y + v.h / 2);
-    else cam.centerOn(v.x + v.w / 2, v.y + v.h / 2);
-    this.player?.setVisible(id === 'toko');
-    for (const s of this.petSprites || []) { s.img.setVisible(id === 'toko'); s.ring.setVisible(id === 'toko'); }
-    this.carryIcon?.setVisible(id === 'toko');
-    this.carryRing?.setVisible(id === 'toko');
-    this.hooks.onHub?.(id);
-    return first;
+    const hw = cam.width / cam.zoom / 2;
+    const hh = cam.height / cam.zoom / 2;
+    const p = this.camPos;
+    p.x = hw * 2 >= WORLD.w ? WORLD.w / 2 : Math.max(hw, Math.min(WORLD.w - hw, p.x));
+    p.y = hh * 2 >= WORLD.h ? WORLD.h / 2 : Math.max(hh, Math.min(WORLD.h - hh, p.y));
+  }
+
+  _followCamera(dt, snap = false) {
+    const goalX = this.player.x;
+    const goalY = this.playerY - 34;
+    const k = snap ? 1 : 1 - Math.pow(0.0004, dt);
+    this.camPos.x += (goalX - this.camPos.x) * k;
+    this.camPos.y += (goalY - this.camPos.y) * k;
+    this._clampCam();
+    this.cameras.main.centerOn(this.camPos.x, this.camPos.y);
   }
 
   _setupInput() {
     this.drag = null;
     const reset = () => { this.drag = null; };
-    this.input.on('pointerdown', (p) => {
-      this.drag = { x: p.x, y: p.y, lx: p.x, ly: p.y, moved: false, id: p.id };
-    });
+    this.input.on('pointerdown', (p) => { this.drag = { x: p.x, y: p.y, id: p.id }; });
     this.input.on('pointermove', (p) => {
       const d = this.drag;
-      if (!d || !p.isDown || p.id !== d.id) return;
-      if (!d.moved && Math.hypot(p.x - d.x, p.y - d.y) < 9) return;
-      d.moved = true;
-      this.camGoal = null;
-      if (this.view !== 'kebun') return;
-      const cam = this.cameras.main;
-      cam.scrollX -= (p.x - d.lx) / cam.zoom;
-      d.lx = p.x;
-      d.ly = p.y;
-      this._kebunX = cam.scrollX + cam.width / 2 / cam.zoom;
+      if (d && p.isDown && p.id === d.id && Math.hypot(p.x - d.x, p.y - d.y) > 28) this.drag = null; // geseran bukan ketukan
     });
     this.input.on('pointerup', (p) => {
       const d = this.drag;
       this.drag = null;
-      if (!d || d.moved) return;
+      if (!d) return;
       const wp = this.cameras.main.getWorldPoint(p.x, p.y);
       this._onTap(wp.x, wp.y);
     });
     this.input.on('pointerupoutside', reset);
     this.input.on('gameout', reset);
     this.game.events.on('blur', reset);
-    this.input.on('pointerdown', () => { this.camGoal = null; });
   }
 
   zoomBy() {}
   overview() {}
+  focusHub() {}
 
-  focusHub(id, instant = false) {
-    const h = HUBS[id];
-    if (!h) return;
-    const cam = this.cameras.main;
-    if (instant) { cam.centerOn(h.x, VIEWS.kebun.y + VIEWS.kebun.h / 2); this._kebunX = h.x; } else this.camGoal = { x: h.x, y: VIEWS.kebun.y + VIEWS.kebun.h / 2 };
-    this._kebunX = h.x;
-  }
-
-  // Pindah layar. 'kolam'/'kandang' = layar Kebun digeser ke bagian itu; 'toko' = layar Toko.
+  // Karakter berjalan ke titik tujuan lalu menjalankan `then`.
   travelTo(id, then) {
-    if (id === 'toko') this.setView('toko');
-    else if (id === 'kolam' || id === 'kandang') {
-      if (this.view !== 'kebun') this.setView('kebun', HUBS[id].x);
-      else this.focusHub(id);
-    }
-    then?.();
+    const s = SPOTS[id === 'kebun' ? 'kolam' : id];
+    if (!s) { then?.(); return; }
+    this._goTo(s.x, s.y, then);
   }
 
-  currentHub() { return this.view || 'kebun'; }
+  currentHub() { return zoneOf(this.player.x, this.playerY); }
+  playerPos() { return { x: this.player.x, y: this.playerY }; }
 
   // ---------- Dunia statis ----------
-  _buildGround() {
-    const g = this.add.graphics().setDepth(-100);
+  // Seluruh tanah, jalan, pagar, dekorasi datar digambar sekali ke satu tekstur supaya ringan.
+  _bakeGround() {
+    const S = BAKE;
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(WORLD.w * S);
+    cv.height = Math.round(WORLD.h * S);
+    const c = cv.getContext('2d');
+    c.scale(S, S);
     const rng = mulberry32(777);
-    g.fillStyle(0x8fd36f, 1).fillRect(0, 0, WORLD.w, WORLD.h);
-    g.fillStyle(0x9ddc7c, 1);
-    for (let i = 0; i < 46; i++) g.fillEllipse(rng() * WORLD.w, rng() * WORLD.h, 120 + rng() * 160, 60 + rng() * 80);
-    // jalan: garis tebal bergaris tepi gelap
-    const roads = [
-      [[150, 450], [1250, 450]], [[700, 200], [700, 960]], [[330, 450], [330, 380]], [[1090, 450], [1090, 380]],
-      [[250, 450], [250, 790]], [[1150, 450], [1150, 790]], [[420, ROAD_Y], [980, ROAD_Y]],
-    ];
-    this.roads = roads;
-    const draw = (width, color) => {
-      g.lineStyle(width, color, 1);
-      for (const r of roads) g.lineBetween(r[0][0], r[0][1], r[1][0], r[1][1]);
-    };
-    draw(80, 0x3b2a1c);
-    g.fillStyle(0x3b2a1c, 1).fillCircle(700, 360, 158);
-    draw(72, 0xf1d9a0);
-    g.fillStyle(0xf1d9a0, 1).fillCircle(700, 360, 150);
-    g.lineStyle(4, 0xe0c27c, 1).strokeCircle(700, 360, 128);
-    // halaman toko
-    g.fillStyle(0x3b2a1c, 1).fillRoundedRect(470, 696, 460, 268, 18);
-    g.fillStyle(0xf1d9a0, 1).fillRoundedRect(476, 702, 448, 256, 14);
-    g.lineStyle(3, 0xe0c27c, 1);
-    for (let x = 500; x < 920; x += 56) g.lineBetween(x, 706, x, 954);
-    // petak hub
-    const hubBox = (x, y, w, h, c1, c2) => {
-      g.fillStyle(0x3b2a1c, 1).fillRoundedRect(x, y, w, h, 26);
-      g.fillStyle(c1, 1).fillRoundedRect(x + 5, y + 5, w - 10, h - 10, 22);
-      g.lineStyle(3, c2, 0.8).strokeRoundedRect(x + 16, y + 16, w - 32, h - 32, 16);
-    };
-    hubBox(40, 50, 520, 380, 0xa6e283, 0x7bc45e);
-    hubBox(840, 50, 520, 380, 0xa6e283, 0x7bc45e);
-    hubBox(40, 540, 420, 330, 0xb6e68f, 0x8bd070);
-    hubBox(940, 540, 420, 330, 0xb6e68f, 0x8bd070);
-    this.groundG = g;
+    const rr = (x, y, w, h, r) => { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); };
+    const img = (key) => this.textures.get(key).getSourceImage();
+    const stamp = (key, x, y, sc, ox = 0.5, oy = 0.5) => { const im = img(key); const w = im.width * sc; const h = im.height * sc; c.drawImage(im, x - w * ox, y - h * oy, w, h); };
 
-    const blocked = [
-      [40, 50, 520, 380], [840, 50, 520, 380], [40, 540, 420, 330], [940, 540, 420, 330], [470, 520, 460, 440], [540, 190, 320, 340],
-      [100, 430, 1200, 40], [660, 190, 80, 780], [210, 430, 80, 380], [1110, 430, 80, 380], [330, 400, 4, 60], [1090, 400, 4, 60],
-    ];
-    const free = (x, y, pad = 28) => !blocked.some(([bx, by, bw, bh]) => x > bx - pad && x < bx + bw + pad && y > by - pad && y < by + bh + pad);
-    const spots = (n, tries = 600) => {
-      const out = [];
-      for (let i = 0; i < tries && out.length < n; i++) {
-        const x = 20 + rng() * (WORLD.w - 40);
-        const y = 20 + rng() * (WORLD.h - 40);
-        if (free(x, y)) out.push([x, y]);
-      }
-      return out;
+    c.fillStyle = '#8fd36f'; c.fillRect(0, 0, WORLD.w, WORLD.h);
+    c.fillStyle = '#9ddc7c';
+    for (let i = 0; i < 40; i++) { c.beginPath(); c.ellipse(rng() * WORLD.w, rng() * WORLD.h, (120 + rng() * 160) / 2, (60 + rng() * 80) / 2, 0, 0, Math.PI * 2); c.fill(); }
+    // jalan
+    const strokeRoads = (width, color) => { c.strokeStyle = color; c.lineWidth = width; c.lineCap = 'butt'; for (const r of ROADS) { c.beginPath(); c.moveTo(r[0][0], r[0][1]); c.lineTo(r[1][0], r[1][1]); c.stroke(); } };
+    strokeRoads(80, '#3b2a1c');
+    c.fillStyle = '#3b2a1c'; c.beginPath(); c.arc(700, 360, 158, 0, Math.PI * 2); c.fill();
+    strokeRoads(72, '#f1d9a0');
+    c.fillStyle = '#f1d9a0'; c.beginPath(); c.arc(700, 360, 150, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = '#e0c27c'; c.lineWidth = 4; c.beginPath(); c.arc(700, 360, 128, 0, Math.PI * 2); c.stroke();
+    // halaman pasar, rumah pet, kebun, kandang
+    const box = (x, y, w, h, c1, c2, r = 26) => {
+      c.fillStyle = '#3b2a1c'; rr(x, y, w, h, r); c.fill();
+      c.fillStyle = c1; rr(x + 5, y + 5, w - 10, h - 10, r - 4); c.fill();
+      c.strokeStyle = c2; c.globalAlpha = 0.8; c.lineWidth = 3; rr(x + 16, y + 16, w - 32, h - 32, 16); c.stroke(); c.globalAlpha = 1;
     };
-    for (const [x, y] of spots(110)) this.add.image(x, y, 'tuft').setScale(0.5).setDepth(-50);
-    spots(46).forEach(([x, y], i) => this.add.image(x, y, `flower${i % 4}`).setScale(0.55).setDepth(y));
-    spots(26).forEach(([x, y]) => this.add.image(x, y, 'bush').setScale(0.6).setOrigin(0.5, 1).setDepth(y));
-    spots(18).forEach(([x, y], i) => this.add.image(x, y, `tree${i % 2}`).setScale(0.5).setOrigin(0.5, 0.96).setDepth(y));
-    spots(10).forEach(([x, y]) => this.add.image(x, y, 'rock').setScale(0.5).setDepth(y));
+    box(BOX.kolam.x, BOX.kolam.y, BOX.kolam.w, BOX.kolam.h, '#a6e283', '#7bc45e');
+    box(BOX.kandang.x, BOX.kandang.y, BOX.kandang.w, BOX.kandang.h, '#a6e283', '#7bc45e');
+    box(60, 560, 380, 280, '#b6e68f', '#8bd070');
+    box(960, 550, 380, 290, '#b6e68f', '#8bd070');
+    // lantai toko berpapan kayu
+    c.fillStyle = '#3b2a1c'; rr(BOX.toko.x, 696, BOX.toko.w, BOX.toko.h, 10); c.fill();
+    c.fillStyle = '#f1d9a0'; rr(BOX.toko.x + 6, 702, BOX.toko.w - 12, BOX.toko.h - 12, 8); c.fill();
+    c.strokeStyle = '#e0c27c'; c.lineWidth = 3;
+    for (let x = 500; x < 920; x += 56) { c.beginPath(); c.moveTo(x, 706); c.lineTo(x, 954); c.stroke(); }
+    // dekorasi datar
+    for (const [x, y] of this.decor.tufts) stamp('tuft', x, y, 0.5);
+    this.decor.flowers.forEach(([x, y], i) => stamp(`flower${i % 4}`, x, y, 0.55));
+    for (const [x, y] of this.decor.rocks) stamp('rock', x, y, 0.5);
+    for (const [x, y] of this.decor.bushes) stamp('bush', x, y, 0.6, 0.5, 1);
     // pohon pembatas tepi
-    for (let x = 30; x < WORLD.w; x += 74) { this.add.image(x, 14, `tree${(x / 74) % 2 | 0}`).setScale(0.5).setOrigin(0.5, 0.9).setDepth(2); }
-    for (let x = 30; x < WORLD.w; x += 74) { this.add.image(x, WORLD.h + 2, `tree${(x / 74 + 1) % 2 | 0}`).setScale(0.5).setOrigin(0.5, 0.96).setDepth(WORLD.h + 2); }
-    for (let y = 80; y < WORLD.h; y += 90) {
-      this.add.image(10, y, 'tree0').setScale(0.5).setOrigin(0.5, 0.96).setDepth(y);
-      this.add.image(WORLD.w - 10, y, 'tree1').setScale(0.5).setOrigin(0.5, 0.96).setDepth(y);
+    for (let x = 30; x < WORLD.w; x += 74) { stamp(`tree${(x / 74) % 2 | 0}`, x, 14, 0.5, 0.5, 0.9); stamp(`tree${(x / 74 + 1) % 2 | 0}`, x, WORLD.h + 2, 0.5, 0.5, 0.96); }
+    for (let y = 80; y < WORLD.h; y += 90) { stamp('tree0', 10, y, 0.5, 0.5, 0.96); stamp('tree1', WORLD.w - 10, y, 0.5, 0.5, 0.96); }
+    // pagar kebun dan kandang
+    const fi = img('fence');
+    const fw = fi.width * 0.5;
+    const fh = fi.height * 0.5;
+    for (const [x, y, w, h] of fenceRects()) {
+      if (w >= h) { for (let px = x + fw / 2; px < x + w + fw / 2 - 4; px += fw - 4) c.drawImage(fi, Math.min(px, x + w - fw / 2) - fw / 2, y + h / 2 - fh * 0.62, fw, fh); }
+      else for (let py = y; py < y + h; py += 30) c.drawImage(fi, x + w / 2 - fw / 2, py - fh * 0.62 + 12, fw, fh);
     }
+    // dinding toko
+    for (const [x, y, w, h] of shopWalls()) {
+      c.fillStyle = '#3b2a1c'; rr(x - 2, y - 2, w + 4, h + 4, 4); c.fill();
+      c.fillStyle = '#d9a05c'; rr(x, y, w, h, 3); c.fill();
+    }
+    // keset pintu
+    c.fillStyle = '#e2574c'; rr(676, 692, 48, 12, 4); c.fill();
+    c.fillStyle = '#e2574c'; rr(466, 926, 12, 34, 3); c.fill();
+    if (this.textures.exists('ground')) this.textures.remove('ground');
+    this.textures.addCanvas('ground', cv);
+    this.ground = this.add.image(0, 0, 'ground').setOrigin(0).setDisplaySize(WORLD.w, WORLD.h).setDepth(-100);
+    // pohon berdiri (urut kedalaman dengan karakter)
+    for (const [x, y] of this.decor.trees) this.add.image(x, y, `tree${(x + y) % 2}`).setScale(0.5).setOrigin(0.5, 0.96).setDepth(y);
   }
 
   _label(x, y, text, w = 150) {
@@ -305,9 +270,10 @@ export class WorldScene extends Phaser.Scene {
 
   _buildHubs() {
     const d = (img, depth) => img.setDepth(depth ?? img.y);
-    // kantor dan alun-alun
-    this.kantor = d(this.add.image(700, 232, 'kantor').setOrigin(0.5, 1).setDisplaySize(220, 160));
-    this._label(700, 244, 'BALAI PASAR', 120).forEach((o) => o.setDepth(900));
+    const B = BUILDINGS;
+    // balai dan alun-alun
+    this.kantor = d(this.add.image(B.kantor.x, B.kantor.y, 'kantor').setOrigin(0.5, 1).setDisplaySize(B.kantor.w, B.kantor.h));
+    this._label(700, 244, 'BALAI PASAR', 120);
     this.add.image(800, 345, 'fountain').setOrigin(0.5, 1).setDisplaySize(120, 100).setDepth(345);
     this.add.image(610, 420, 'signpost').setOrigin(0.5, 1).setDisplaySize(72, 80).setDepth(420);
     for (const x of [590, 810]) this.add.image(x, 260, 'lamp').setOrigin(0.5, 1).setDisplaySize(22, 56).setDepth(260);
@@ -315,21 +281,15 @@ export class WorldScene extends Phaser.Scene {
     this.npc = this.add.image(630, 355, 'npc').setOrigin(0.5, 1).setDisplaySize(44, 68).setDepth(355);
     this.npcMark = this.add.image(630, 270, 'exclaim').setDisplaySize(24, 30).setDepth(9000).setVisible(false);
     this.tweens.add({ targets: this.npcMark, y: 262, duration: 520, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-    // pasar
-    this.pasarB = d(this.add.image(250, 700, 'pasar').setOrigin(0.5, 1).setDisplaySize(220, 160));
-    this._label(250, 712, 'PASAR', 90);
-    // rumah pet
-    this.petB = d(this.add.image(1150, 700, 'pethouse').setOrigin(0.5, 1).setDisplaySize(200, 170));
-    this._label(1150, 712, 'RUMAH PET', 120);
+    // pasar dan rumah pet
+    this.pasarB = d(this.add.image(B.pasar.x, B.pasar.y, 'pasar').setOrigin(0.5, 1).setDisplaySize(B.pasar.w, B.pasar.h));
+    this.petB = d(this.add.image(B.pet.x, B.pet.y, 'pethouse').setOrigin(0.5, 1).setDisplaySize(B.pet.w, B.pet.h));
     // toko
-    this.add.image(700, 700, 'toko').setOrigin(0.5, 1).setDisplaySize(380, 150).setDepth(700);
-    this.add.image(884, 878, 'counter').setOrigin(0.5, 1).setScale(0.45).setDepth(878);
-    // papan nama hub
-    this._label(300, 84, 'KOLAM & KEBUN', 160);
-    this._label(1100, 84, 'KANDANG SATWA', 160);
-    // pagar kecil di sekitar kolam/kandang
-    for (let x = 70; x < 540; x += 46) this.add.image(x, 408, 'fence').setOrigin(0.5, 1).setScale(0.5).setDepth(408);
-    for (let x = 870; x < 1340; x += 46) this.add.image(x, 408, 'fence').setOrigin(0.5, 1).setScale(0.5).setDepth(408);
+    this.add.image(B.toko.x, B.toko.y, 'toko').setOrigin(0.5, 1).setDisplaySize(B.toko.w, B.toko.h).setDepth(700);
+    this.add.image(COUNTER.x, COUNTER.y, 'counter').setOrigin(0.5, 1).setScale(0.45).setDepth(COUNTER.y);
+    // papan nama kebun dan kandang (menggantung di pagar)
+    this._label(300, 30, 'KOLAM & KEBUN', 160);
+    this._label(1100, 30, 'KANDANG SATWA', 160);
   }
 
   // ---------- Lahan (kolam, petak, kandang) ----------
@@ -391,8 +351,10 @@ export class WorldScene extends Phaser.Scene {
 
   _updatePlots(time, force = false) {
     const e = this.engine;
+    const view = this.cameras.main.worldView;
     for (const p of this.plots) {
       if (p.slot === null || !p.occs || !p.occs.length) continue;
+      if (!force && (p.x + p.w < view.x - 40 || p.x - p.w > view.right + 40 || p.y + p.h < view.y - 40 || p.y - p.h > view.bottom + 40)) continue;
       const prs = (e.state.farm.slots[p.slot] || []).map((_, li) => e.slotProgress(p.slot, li));
       if (!prs.length || prs.some((x) => !x)) continue;
       const anyReady = prs.some((x) => x.ready);
@@ -480,7 +442,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   refreshStaff() {
-    const spots = { kasir: [886, 848], pramuniaga: [560, 850], penjaga: [640, 850], satpam: [500, 900], badut: [560, 930], perawat: [330, 462] };
+    const spots = { kasir: [886, 848], pramuniaga: [560, 850], penjaga: [640, 850], satpam: [292, 402], badut: [560, 930], perawat: [330, 462] };
     for (const st of STAFF) {
       const on = !!this.engine.state.staff[st.id];
       let sp = this.staffSprites[st.id];
@@ -510,7 +472,6 @@ export class WorldScene extends Phaser.Scene {
       const col = Phaser.Display.Color.HexStringToColor(RARITIES.find((r) => r.id === p.rarity).color).color;
       const ring = this.add.ellipse(this.player.x, this.playerY, 30, 10, col, 0.55).setStrokeStyle(2, col).setDepth(1);
       const img = this.add.image(this.player.x - 30 * (i + 1), this.playerY, `pet_${p.kind}`).setOrigin(0.5, 1).setDisplaySize(34, 34);
-      img.setVisible(this.view === 'toko'); ring.setVisible(this.view === 'toko');
       this.petSprites.push({ img, ring, i, id });
     });
   }
@@ -527,6 +488,8 @@ export class WorldScene extends Phaser.Scene {
     this.dayActive = true;
     this.customers = [];
     this.queue = [];
+    this._clearThief();
+    this.thiefSpawned = false;
     this.setCarry(null);
     this.refreshShelves();
   }
@@ -548,7 +511,6 @@ export class WorldScene extends Phaser.Scene {
       const col = Phaser.Display.Color.HexStringToColor(RARITIES.find((r) => r.id === animal.rarity).color).color;
       this.carryRing = this.add.circle(this.player.x, this.playerY - 78, 18, col, 0.6).setStrokeStyle(3, col).setDepth(19000);
       this.carryIcon = this.add.image(this.player.x, this.playerY - 78, `icon_${animal.itemId}`).setDisplaySize(30, 30).setDepth(19001);
-      this.carryRing.setVisible(this.view === 'toko'); this.carryIcon.setVisible(this.view === 'toko');
     }
   }
 
@@ -560,7 +522,8 @@ export class WorldScene extends Phaser.Scene {
   update(time, delta) {
     const dt = delta / 1000;
     this._movePlayer(time, dt);
-    this._moveCamera(dt);
+    this._followCamera(dt);
+    this._trackZone(time);
     this._updatePopups(dt);
     this._updateFx(dt);
     this._updatePlots(time);
@@ -576,10 +539,18 @@ export class WorldScene extends Phaser.Scene {
     this.clock += sdt;
     while (!this.closing && this.pending.length && this.pending[0].spawnAt <= this.clock) this._spawn(this.pending.shift());
     if (!this.closing && this.clock >= DAY_LENGTH_SEC && this.pending.length === 0) this.closing = true;
+    this._updateThief(sdt, time);
     for (const c of this.customers.slice()) this._updateCustomer(c, sdt, time);
     this._updateQueue(sdt);
-    if (this.closing && this.pending.length === 0 && this.customers.length === 0) this._finishDay();
+    if (this.closing && this.pending.length === 0 && this.customers.length === 0 && !this.thief) this._finishDay();
     this._tick();
+  }
+
+  _trackZone(time) {
+    if (time - this._zoneT < 200) return;
+    this._zoneT = time;
+    const z = zoneOf(this.player.x, this.playerY);
+    if (z !== this._zone) { this._zone = z; this.hooks.onHub?.(z); }
   }
 
   _tick() {
@@ -618,34 +589,46 @@ export class WorldScene extends Phaser.Scene {
   }
 
   // ---------- Pemain ----------
-  // Karakter diam di toko: ketukan langsung bekerja tanpa berjalan.
+  // Karakter berjalan sungguhan lewat jalur yang menghindari dinding; ketukan baru membatalkan tujuan lama.
   _goTo(x, y, then) {
-    // Di Toko karakter berjalan sungguhan (kecepatan dari skill); di Kebun ketukan langsung bekerja.
-    if (this.view !== 'toko') { then?.(); return; }
-    const tx = Math.max(500, Math.min(900, x));
-    const ty = Math.max(822, Math.min(935, y));
-    this.playerTarget = { x: tx, y: ty, then };
+    this.path = this.nav.find(this.player.x, this.playerY, x, y);
+    const end = this.path.at(-1);
+    const reached = !end || Math.hypot(end.x - x, end.y - y) < 40;
+    this.pathThen = reached ? then || null : null;
+    if (!this.path.length) { const t = this.pathThen; this.pathThen = null; t?.(); return; }
+    if (!reached && then) this._popup(this.player.x, this.playerY - 90, 'Tidak bisa ke sana', '#ffd0d0');
+    if (this.dest) this.dest.destroy();
+    const tp = end || { x, y };
+    this.dest = this.add.ellipse(tp.x, tp.y, 26, 10, 0xffffff, 0.5).setStrokeStyle(2, 0x3b2a1c, 0.7).setDepth(5);
   }
 
   _movePlayer(time, dt) {
-    const t = this.playerTarget;
     let moving = false;
-    if (t) {
+    let budget = PLAYER_SPEED * (this.engine.walkMul?.() ?? 1) * dt;
+    while (this.path.length && budget > 0) {
+      const t = this.path[0];
       const dx = t.x - this.player.x;
       const dy = t.y - this.playerY;
       const dist = Math.hypot(dx, dy);
-      const step = PLAYER_SPEED * (this.engine.walkMul?.() ?? 1) * dt;
-      if (dist <= step) {
+      if (dist <= budget) {
         this.player.x = t.x;
         this.playerY = t.y;
-        this.playerTarget = null;
-        t.then?.();
+        this.path.shift();
+        budget -= dist;
       } else {
-        this.player.x += (dx / dist) * step;
-        this.playerY += (dy / dist) * step;
-        if (Math.abs(dx) > 1) this.player.setFlipX(dx < 0);
-        moving = true;
+        this.player.x += (dx / dist) * budget;
+        this.playerY += (dy / dist) * budget;
+        budget = 0;
       }
+      if (Math.abs(dx) > 1) this.player.setFlipX(dx < 0);
+      moving = true;
+    }
+    if (!this.path.length && moving === false && this.dest) { this.dest.destroy(); this.dest = null; }
+    if (!this.path.length && this.pathThen) {
+      const then = this.pathThen;
+      this.pathThen = null;
+      if (this.dest) { this.dest.destroy(); this.dest = null; }
+      then();
     }
     const bob = Math.sin(time / (moving ? 70 : 380)) * (moving ? 2.6 : 1.1);
     this.player.y = this.playerY + bob;
@@ -655,17 +638,6 @@ export class WorldScene extends Phaser.Scene {
       this.carryIcon.setPosition(this.player.x, this.playerY - 78 + bob);
       this.carryRing.setPosition(this.player.x, this.playerY - 78 + bob);
     }
-  }
-
-  _moveCamera(dt) {
-    const cam = this.cameras.main;
-    const goal = this.camGoal;
-    if (!goal) return;
-    const cx = cam.scrollX + cam.width / 2 / cam.zoom;
-    const cy = cam.scrollY + cam.height / 2 / cam.zoom;
-    const k = 1 - Math.pow(0.0008, dt);
-    cam.centerOn(cx + (goal.x - cx) * k, cy + (goal.y - cy) * k);
-    if (Math.hypot(goal.x - cx, goal.y - cy) < 2) this.camGoal = null;
   }
 
   _updatePets(time, dt) {
@@ -708,15 +680,18 @@ export class WorldScene extends Phaser.Scene {
     // lahan
     const plot = this.plots.find((p) => Math.abs(x - p.x) < p.w / 2 && Math.abs(y - p.y) < p.h / 2 + 8);
     if (plot) {
-      this._goTo(plot.x, plot.y + plot.h / 2 + 22, () => this.hooks.onTapPlot?.({ slot: plot.slot, hab: plot.hab, buy: !!plot.buy }));
+      const f = plotFront(plot.hab, plot.x, plot.y);
+      this._goTo(f.x, f.y, () => this.hooks.onTapPlot?.({ slot: plot.slot, hab: plot.hab, buy: !!plot.buy }));
       return;
     }
     // bangunan dan NPC
-    const near = (bx, by, w, h) => Math.abs(x - bx) < w / 2 && y > by - h && y < by + 12;
-    if (near(250, 700, 220, 160)) { this._goTo(250, 760, () => this.hooks.onTapBuilding?.('pasar')); return; }
-    if (near(1150, 700, 200, 170)) { this._goTo(1150, 760, () => this.hooks.onTapBuilding?.('pet')); return; }
-    if (near(700, 232, 220, 160)) { this._goTo(700, 262, () => this.hooks.onTapBuilding?.('kantor')); return; }
-    if (near(630, 355, 50, 80)) { this._goTo(640, 385, () => this.hooks.onTapBuilding?.('npc')); return; }
+    const near = (b) => Math.abs(x - b.x) < b.w / 2 && y > b.y - b.h && y < b.y + 12;
+    const B = BUILDINGS;
+    if (near(B.pasar)) { this._goTo(SPOTS.pasar.x, SPOTS.pasar.y, () => this.hooks.onTapBuilding?.('pasar')); return; }
+    if (near(B.pet)) { this._goTo(SPOTS.pet.x, SPOTS.pet.y, () => this.hooks.onTapBuilding?.('pet')); return; }
+    if (near(B.kantor)) { this._goTo(SPOTS.kantor.x, SPOTS.kantor.y, () => this.hooks.onTapBuilding?.('kantor')); return; }
+    if (near({ x: 630, y: 355, w: 50, h: 80 })) { this._goTo(SPOTS.npc.x, SPOTS.npc.y, () => this.hooks.onTapBuilding?.('npc')); return; }
+    if (near(B.toko)) { this._goTo(SPOTS.toko.x, SPOTS.toko.y); return; }
     this._goTo(x, y);
   }
 
@@ -902,6 +877,99 @@ export class WorldScene extends Phaser.Scene {
         c.sprite.setFlipX(dx < 0);
       }
     });
+  }
+
+  // ---------- Pencuri ----------
+  _clearThief() {
+    if (!this.thief) return;
+    this.thief.sprite.destroy();
+    this.thief.tag.destroy();
+    this.thief.loot?.destroy();
+    this.thief = null;
+  }
+
+  _spawnThief() {
+    this.thiefSpawned = true;
+    const pv = this.engine.thiefPreview();
+    if (!pv) { this.engine.resolveThief(); return; }
+    const plot = this.plots.find((p) => p.slot === pv.slot);
+    if (!plot) { this.engine.resolveThief(); return; }
+    const east = plot.hab === 'kandang';
+    const entry = east ? { x: 1260, y: 452 } : { x: 130, y: 452 };
+    const f = plotFront(plot.hab, plot.x, plot.y);
+    const path = this.nav.find(entry.x, entry.y, f.x, f.y);
+    const caught = this.engine.thiefCaught(pv.slot);
+    const guard = this.staffSprites.satpam;
+    const sprite = this.add.image(entry.x, entry.y, A.lookKey('biasa', 1)).setOrigin(0.5, 1).setDisplaySize(44, 68).setTint(0x59596f);
+    const tag = T(this, entry.x, entry.y - 76, 'PENCURI!', 10, '#ffffff', { backgroundColor: '#b3261e', padding: { x: 4, y: 1 } }).setDepth(9400);
+    this.thief = { x: entry.x, y: entry.y, path, entry, state: 'in', caught, slot: pv.slot, guard, sprite, tag, wait: 0 };
+    this._popup(entry.x, entry.y - 96, 'Ada pencuri!', '#ffd0d0');
+    this.hooks.onThief?.({ phase: 'arrive', caught });
+  }
+
+  _updateThief(dt, time) {
+    const eng = this.engine;
+    const plan = eng.today?.thief;
+    if (!this.thief && !this.thiefSpawned && plan && !plan.done && !this.closing && this.clock >= plan.at * DAY_LENGTH_SEC) this._spawnThief();
+    const th = this.thief;
+    if (!th) return;
+    let moving = false;
+    if (th.state === 'steal') {
+      th.wait -= dt;
+      if (th.wait <= 0) this._thiefFlee(th);
+    } else {
+      let budget = (th.state === 'flee' ? 150 : 95) * dt;
+      while (budget > 0 && th.path.length) {
+        const t = th.path[0];
+        const dx = t.x - th.x;
+        const dy = t.y - th.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist <= budget) { th.x = t.x; th.y = t.y; th.path.shift(); budget -= dist; } else { th.x += (dx / dist) * budget; th.y += (dy / dist) * budget; budget = 0; }
+        if (Math.abs(dx) > 0.5) th.sprite.setFlipX(dx < 0);
+        moving = true;
+      }
+      if (th.state === 'in') {
+        // satpam di kolam menghentikan pencuri begitu cukup dekat
+        if (th.caught && th.guard && Math.hypot(th.x - th.guard.x, th.y - th.guard.y) < 78) this._thiefStopped(th);
+        else if (!th.path.length) this._thiefStrike(th);
+      } else if (th.state === 'flee' && !th.path.length) {
+        this._clearThief();
+        return;
+      }
+    }
+    const bob = moving ? Math.sin(time / 60) * 2.6 : 0;
+    th.sprite.setPosition(th.x, th.y + bob).setDepth(th.y);
+    th.tag.setPosition(th.x, th.y - 76);
+    th.loot?.setPosition(th.x, th.y - 92);
+  }
+
+  _thiefStopped(th) {
+    this.engine.resolveThief();
+    this._popup(th.guard.x, th.guard.y - 60, 'Satpam: Berhenti!', '#ffe08a');
+    this._popup(th.x, th.y - 96, 'Kabur!', '#ffd0d0');
+    this.burst(th.x, th.y - 40, 0xffffff, 8);
+    this.hooks.onThief?.({ phase: 'caught' });
+    this._thiefFlee(th);
+  }
+
+  _thiefStrike(th) {
+    const res = this.engine.resolveThief();
+    th.state = 'steal';
+    th.wait = 0.9;
+    if (res?.stolen) {
+      this._popup(th.x, th.y - 96, 'Hewan dicuri!', '#ff9b9b');
+      this.burst(th.x, th.y - 40, 0xe2574c, 10);
+      this.refreshFarm();
+      this.refreshShelves();
+      th.loot = this.add.image(th.x, th.y - 90, `icon_${res.itemId}`).setDisplaySize(26, 26).setDepth(9500);
+      this.hooks.onThief?.({ phase: 'stolen', itemId: res.itemId });
+    } else this.hooks.onThief?.({ phase: 'none' });
+  }
+
+  _thiefFlee(th) {
+    th.state = 'flee';
+    th.path = this.nav.find(th.x, th.y, th.entry.x, th.entry.y);
+    th.tag.setText('KABUR!');
   }
 
   // ---------- Efek ----------

@@ -224,3 +224,13 @@ html.contrast { --bg: #fff; --panel: #fff; --panel-2: #f1e7d1; --muted: #2b1d12;
 
 .chips.sticky { position: sticky; top: -10px; z-index: 3; background: var(--panel); margin: -10px -12px 0; padding: 8px 12px 6px; border-bottom: 2px solid #3b2a1c22; }
 .pager { display: none !important; }
+
+/* Pilihan kompak (spesies, pakan) tanpa tumpang tindih */
+.pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; }
+.pick { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 5px 3px; min-height: 58px; border: 2.5px solid var(--line); border-radius: 12px; background: var(--panel-3); font-weight: 800; font-size: 12px; line-height: 1.15; text-align: center; box-shadow: 0 2px 0 var(--line); }
+.pick.on { background: var(--accent); }
+.pick small { font-size: 10.5px; color: var(--muted); font-weight: 700; }
+.card.compact { padding: 8px 10px; gap: 6px; }
+.btn { min-height: 40px; padding: 7px 10px; }
+.btn.small { min-height: 32px; padding: 4px 9px; font-size: 12.5px; }
+.qbtn { min-width: 34px; height: 34px; font-size: 12px; }
