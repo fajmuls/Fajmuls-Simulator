@@ -116,48 +116,68 @@ export const SKILL_BRANCHES = [
   { id: 'pertanian', name: 'Kebun & Kolam', icon: '🌱' },
   { id: 'peternakan', name: 'Peternakan & Pet', icon: '🐣' },
 ];
+// ---------- Skill tree ----------
+// Skill = simpul pohon: maksimal 3 rank, butuh simpul sebelumnya, biaya poin naik tiap rank dan tier.
+// Biaya rank berikutnya = TIER_COST[tier-1] x (rank sekarang + 1).
+export const TIER_COST = [1, 2, 3, 5];
 export const SKILLS = [
   // Dagang
-  { id: 'tawar', branch: 'dagang', name: 'Tawar-menawar', max: 8, req: null, desc: 'Diskon belanja grosir dan bibit 2,5% per rank.' },
-  { id: 'harga_prima', branch: 'dagang', name: 'Mata Dagang', max: 8, req: 'tawar', desc: 'Pembeli rela bayar 3% lebih tinggi per rank.' },
-  { id: 'lidah_emas', branch: 'dagang', name: 'Lidah Emas', max: 8, req: 'harga_prima', desc: 'Harga jual semua hewan +5% per rank (di atas batas pelanggan).' },
-  { id: 'tip_besar', branch: 'dagang', name: 'Senyum Bertip', max: 5, req: 'lidah_emas', desc: 'Tip pelayanan cepat +8% per rank.' },
-  { id: 'penjual_ulung', branch: 'dagang', name: 'Penjual Ulung', max: 6, req: 'tip_besar', desc: 'Harga jual semua hewan +3% per rank.' },
-  { id: 'juragan', branch: 'dagang', name: 'Juragan Hemat', max: 5, req: 'harga_prima', desc: 'Sewa toko turun 10% per rank.' },
-  { id: 'akuntan', branch: 'dagang', name: 'Akuntan Teliti', max: 5, req: 'juragan', desc: 'Gaji karyawan turun 8% per rank.' },
+  { id: 'juragan', branch: 'dagang', tier: 1, name: 'Juragan Hemat', max: 3, req: null, desc: 'Sewa toko turun 10% per rank.' },
+  { id: 'akuntan', branch: 'dagang', tier: 2, name: 'Akuntan Teliti', max: 3, req: 'juragan', desc: 'Gaji karyawan turun 12% per rank.' },
   // Pemasaran
-  { id: 'promosi', branch: 'pemasaran', name: 'Promosi', max: 8, req: null, desc: 'Pelanggan +8% per rank.' },
-  { id: 'ramah', branch: 'pemasaran', name: 'Pelayanan Ramah', max: 5, req: 'promosi', desc: 'Reputasi naik 12% lebih cepat dan turun 12% lebih lambat per rank.' },
-  { id: 'vipmagnet', branch: 'pemasaran', name: 'Magnet VIP', max: 8, req: 'ramah', desc: 'Pelanggan VIP 15% lebih sering per rank.' },
-  { id: 'sabar', branch: 'pemasaran', name: 'Suasana Nyaman', max: 5, req: 'promosi', desc: 'Pelanggan 8% lebih sabar menunggu per rank.' },
-  { id: 'setia', branch: 'pemasaran', name: 'Pelanggan Setia', max: 8, req: 'promosi', desc: 'Pelanggan +5% per rank.' },
-  { id: 'iklan', branch: 'pemasaran', name: 'Iklan Besar', max: 6, req: 'vipmagnet', desc: 'Pelanggan +6% per rank.' },
-  { id: 'toko_ramai', branch: 'pemasaran', name: 'Toko Ramai', max: 5, req: 'iklan', desc: 'Batas pelanggan harian +10 per rank.' },
-  { id: 'viral', branch: 'pemasaran', name: 'Kabar Viral', max: 5, req: 'ramah', desc: 'Reputasi naik tambahan 10% per rank.' },
+  { id: 'ramah', branch: 'pemasaran', tier: 1, name: 'Pelayanan Ramah', max: 3, req: null, desc: 'Reputasi naik 12% lebih cepat dan turun 12% lebih lambat per rank.' },
+  { id: 'viral', branch: 'pemasaran', tier: 2, name: 'Kabar Viral', max: 3, req: 'ramah', desc: 'Reputasi naik tambahan 10% per rank.' },
+  { id: 'toko_ramai', branch: 'pemasaran', tier: 3, name: 'Toko Ramai', max: 3, req: 'viral', desc: 'Batas pelanggan harian +15 per rank.' },
   // Logistik
-  { id: 'gudang', branch: 'logistik', name: 'Gudang Rapi', max: 8, req: null, desc: 'Kapasitas stok +12 per rank.' },
-  { id: 'tim', branch: 'logistik', name: 'Manajemen Tim', max: 6, req: null, desc: 'Tambah 1 slot karyawan per rank (awal 0 slot).' },
-  { id: 'tim_cepat', branch: 'logistik', name: 'Tim Sigap', max: 5, req: 'tim', desc: 'Semua karyawan bekerja 10% lebih cepat per rank.' },
-  { id: 'kasir_cepat', branch: 'logistik', name: 'Kasir Gesit', max: 5, req: 'gudang', desc: 'Pembayaran 12% lebih cepat per rank.' },
-  { id: 'tim_besar', branch: 'logistik', name: 'Manajer Senior', max: 3, req: 'tim_cepat', desc: 'Tambah 1 slot karyawan per rank.' },
-  { id: 'pagar', branch: 'logistik', name: 'Pagar Kuat', max: 4, req: 'gudang', desc: 'Peluang pencuri datang turun 20% per rank.' },
-  { id: 'insting', branch: 'logistik', name: 'Insting Pasar', max: 1, req: 'kasir_cepat', desc: 'Lihat perkiraan harga grosir dan event besok.' },
-  // Pemain
-  { id: 'langkah', branch: 'pemain', name: 'Langkah Cepat', max: 10, req: null, desc: 'Karakter berjalan 10% lebih cepat per rank (di dalam Toko).' },
-  { id: 'sigap', branch: 'pemain', name: 'Tangan Sigap', max: 5, req: 'langkah', desc: 'Tip cepat masih didapat walau pelanggan sudah menunggu lebih lama (+8% per rank).' },
-  // Kebun & Kolam
-  { id: 'tumbuh_cepat', branch: 'pertanian', name: 'Tangan Dingin', max: 8, req: null, desc: 'Bibit tumbuh 4% lebih cepat per rank.' },
-  { id: 'bibit_murah', branch: 'pertanian', name: 'Pemburu Bibit', max: 5, req: 'tumbuh_cepat', desc: 'Harga bibit turun 4% per rank.' },
-  { id: 'panen_ganda', branch: 'pertanian', name: 'Panen Berkah', max: 6, req: 'tumbuh_cepat', desc: 'Tiap panen punya peluang +8% per rank untuk hewan bonus.' },
-  { id: 'mata_elang', branch: 'pertanian', name: 'Mata Elang', max: 6, req: 'panen_ganda', desc: 'Peluang rarity tinggi saat panen naik per rank.' },
-  { id: 'pakan_hemat', branch: 'pertanian', name: 'Pakan Hemat', max: 5, req: 'bibit_murah', desc: 'Harga pakan turun 6% per rank.' },
+  { id: 'tim', branch: 'logistik', tier: 1, name: 'Manajemen Tim', max: 3, req: null, desc: 'Tambah 1 slot karyawan per rank (awal 0 slot).' },
+  { id: 'tim_cepat', branch: 'logistik', tier: 2, name: 'Tim Sigap', max: 3, req: 'tim', desc: 'Semua karyawan bekerja 15% lebih cepat per rank.' },
+  { id: 'tim_besar', branch: 'logistik', tier: 3, name: 'Manajer Senior', max: 3, req: 'tim_cepat', desc: 'Tambah 1 slot karyawan per rank.' },
+  { id: 'pagar', branch: 'logistik', tier: 2, name: 'Pagar Kuat', max: 3, req: 'tim', desc: 'Peluang pencuri datang turun 25% per rank.' },
+  { id: 'insting', branch: 'logistik', tier: 3, name: 'Insting Pasar', max: 1, req: 'pagar', desc: 'Lihat perkiraan harga grosir dan event besok.' },
   // Peternakan & Pet
-  { id: 'breeder', branch: 'peternakan', name: 'Pengembang Biak', max: 1, req: null, desc: 'Buka kandang breeding (1 slot).' },
-  { id: 'bibit_unggul', branch: 'peternakan', name: 'Bibit Unggul', max: 5, req: 'breeder', desc: 'Peluang anakan naik kualitas +8% per rank.' },
-  { id: 'kandang_besar', branch: 'peternakan', name: 'Kandang Luas', max: 5, req: 'breeder', desc: 'Slot breeding +1 per rank.' },
-  { id: 'pet_kuat', branch: 'peternakan', name: 'Pawang Hebat', max: 5, req: null, desc: 'Efek semua pet yang dipakai +12% per rank.' },
-  { id: 'slot_pet', branch: 'peternakan', name: 'Teman Setia', max: 3, req: 'pet_kuat', desc: 'Slot pet aktif +1 per rank.' },
+  { id: 'breeder', branch: 'peternakan', tier: 1, name: 'Pengembang Biak', max: 1, req: null, desc: 'Buka kandang breeding (1 slot).' },
+  { id: 'kandang_besar', branch: 'peternakan', tier: 2, name: 'Kandang Luas', max: 3, req: 'breeder', desc: 'Slot breeding +1 per rank.' },
+  { id: 'slot_pet', branch: 'peternakan', tier: 1, name: 'Teman Setia', max: 3, req: null, desc: 'Slot pet aktif +1 per rank.' },
+  { id: 'kandang_pet', branch: 'peternakan', tier: 2, name: 'Rumah Pet Luas', max: 3, req: 'slot_pet', desc: 'Kapasitas inventori pet +20 per rank.' },
+  { id: 'pet_kuat', branch: 'peternakan', tier: 3, name: 'Pawang Hebat', max: 3, req: 'kandang_pet', desc: 'Efek semua pet yang dipakai +20% per rank.' },
 ];
+
+// ---------- Atribut dan Perk ----------
+// Atribut dibagi lewat poin atribut (bintang, level toko, bab cerita). Perk punya banyak rank,
+// butuh level atribut tertentu: level atribut minimal = need + floor(rank sekarang / 2).
+export const ATTRS = [
+  { id: 'dagang', name: 'Dagang', icon: '💰', text: 'Harga jual +0,5% per level' },
+  { id: 'karisma', name: 'Karisma', icon: '✨', text: 'Pelanggan +1% per level' },
+  { id: 'tangkas', name: 'Ketangkasan', icon: '⚡', text: 'Jalan +2% lebih cepat per level' },
+  { id: 'hoki', name: 'Hoki', icon: '🍀', text: 'Peluang rarity tinggi +2% per level' },
+];
+export const getAttr = (id) => ATTRS.find((x) => x.id === id);
+export const PERKS = [
+  { id: 'tawar', attr: 'dagang', need: 1, name: 'Tawar-menawar', max: 8, desc: 'Diskon belanja grosir dan bibit 2,5% per rank.' },
+  { id: 'harga_prima', attr: 'dagang', need: 2, name: 'Mata Dagang', max: 8, desc: 'Pembeli rela bayar 3% lebih tinggi per rank.' },
+  { id: 'lidah_emas', attr: 'dagang', need: 4, name: 'Lidah Emas', max: 8, desc: 'Harga jual semua hewan +5% per rank.' },
+  { id: 'penjual_ulung', attr: 'dagang', need: 5, name: 'Penjual Ulung', max: 6, desc: 'Harga jual semua hewan +3% per rank.' },
+  { id: 'bibit_murah', attr: 'dagang', need: 2, name: 'Pemburu Bibit', max: 5, desc: 'Harga bibit turun 4% per rank.' },
+  { id: 'pakan_hemat', attr: 'dagang', need: 3, name: 'Pakan Hemat', max: 5, desc: 'Harga pakan turun 6% per rank.' },
+  { id: 'promosi', attr: 'karisma', need: 1, name: 'Promosi', max: 8, desc: 'Pelanggan +8% per rank.' },
+  { id: 'setia', attr: 'karisma', need: 3, name: 'Pelanggan Setia', max: 8, desc: 'Pelanggan +5% per rank.' },
+  { id: 'iklan', attr: 'karisma', need: 5, name: 'Iklan Besar', max: 6, desc: 'Pelanggan +6% per rank.' },
+  { id: 'vipmagnet', attr: 'karisma', need: 4, name: 'Magnet VIP', max: 8, desc: 'Pelanggan VIP 15% lebih sering per rank.' },
+  { id: 'sabar', attr: 'karisma', need: 2, name: 'Suasana Nyaman', max: 5, desc: 'Pelanggan 8% lebih sabar menunggu per rank.' },
+  { id: 'tip_besar', attr: 'karisma', need: 2, name: 'Senyum Bertip', max: 5, desc: 'Tip pelayanan cepat +8% per rank.' },
+  { id: 'gudang', attr: 'tangkas', need: 1, name: 'Gudang Rapi', max: 8, desc: 'Kapasitas gudang hewan +8 per rank.' },
+  { id: 'kasir_cepat', attr: 'tangkas', need: 2, name: 'Kasir Gesit', max: 5, desc: 'Pembayaran 12% lebih cepat per rank.' },
+  { id: 'langkah', attr: 'tangkas', need: 1, name: 'Langkah Cepat', max: 10, desc: 'Karakter berjalan 10% lebih cepat per rank.' },
+  { id: 'sigap', attr: 'tangkas', need: 3, name: 'Tangan Sigap', max: 5, desc: 'Tip cepat masih didapat walau pelanggan menunggu lebih lama (+8% per rank).' },
+  { id: 'tumbuh_cepat', attr: 'tangkas', need: 2, name: 'Tangan Dingin', max: 8, desc: 'Bibit tumbuh 4% lebih cepat per rank.' },
+  { id: 'panen_ganda', attr: 'hoki', need: 3, name: 'Panen Berkah', max: 6, desc: 'Tiap panen punya peluang +8% per rank untuk hewan bonus.' },
+  { id: 'mata_elang', attr: 'hoki', need: 2, name: 'Mata Elang', max: 6, desc: 'Peluang rarity tinggi saat panen naik per rank.' },
+  { id: 'bibit_unggul', attr: 'hoki', need: 3, name: 'Bibit Unggul', max: 5, desc: 'Peluang anakan naik kualitas +8% per rank.' },
+];
+export const SKILL_ALL = [...SKILLS, ...PERKS];
+// Biaya poin untuk rank berikutnya (rank = rank sekarang).
+export const skillCost = (def, rank) => (def.attr ? 1 + Math.floor(rank / 2) : TIER_COST[def.tier - 1] * (rank + 1));
+export const perkNeed = (def, rank) => def.need + Math.floor(rank / 2);
 export const SKILL_POINT_EVERY_DAYS = 5; // satu poin tiap 5 hari bermain
 export const SKILL_POINT_EVERY_FULL_DAYS = 3; // satu poin tiap 3 hari dengan semua misi harian selesai
 // (ditambah satu poin tiap minggu dengan semua misi mingguan selesai)
@@ -291,7 +311,7 @@ export function getUpgrade(id) {
   return u;
 }
 export const getSkill = (id) => {
-  const s = SKILLS.find((x) => x.id === id);
+  const s = SKILL_ALL.find((x) => x.id === id);
   if (!s) throw new Error(`Skill tidak dikenal: ${id}`);
   return s;
 };

@@ -92,7 +92,7 @@ export const getEgg = (id) => {
 export const PET_MAX = 60;
 export const PET_EXPAND = 20; // slot inventori per perluasan
 export const PET_EXPAND_MAX = 10;
-export const petMax = (e) => PET_MAX + PET_EXPAND * (e.state.pets.extra || 0);
+export const petMax = (e) => PET_MAX + PET_EXPAND * ((e.state.pets.extra || 0) + (e.state.skills.kandang_pet || 0));
 export const petExpandCost = (e) => Math.round(20000 * Math.pow(1.8, e.state.pets.extra || 0));
 export function buyPetSpace(e) {
   const n = e.state.pets.extra || 0;
@@ -114,7 +114,7 @@ export const newPolicy = () => ({ sell: {}, obralPct: 0.25, petAuto: {}, petConf
 export const sellMode = (e, rarity) => (e.state.policy && e.state.policy.sell[rarity]) || 'normal';
 
 // Kapasitas gudang hewan: kecil di awal, naik bertahap.
-export const animalCap = (e) => 20 + 15 * ((e.state.shopLevel || 1) - 1) + 10 * (e.state.upgrades.rak || 0) + 8 * (e.state.skills.gudang || 0) + 6 * (e.state.perks?.gudang_perk || 0);
+export const animalCap = (e) => 20 + 15 * ((e.state.shopLevel || 1) - 1) + 10 * (e.state.upgrades.rak || 0) + 8 * (e.state.skills.gudang || 0);
 export const stockFull = (e) => farmOf(e).animals.length >= animalCap(e);
 
 // ---------- Matematika murni ----------
@@ -159,7 +159,7 @@ export function farmBuffs(e) {
   const b = { luck: 0, grow: 0, value: 0, patience: 0, tip: 0 };
   const pets = e.state.pets;
   const sk = e.state.skills;
-  const petMul = 1 + 0.12 * (sk.pet_kuat || 0);
+  const petMul = 1 + 0.2 * (sk.pet_kuat || 0);
   for (const id of pets.equipped) {
     const p = pets.owned.find((x) => x.id === id);
     if (p) b[getPetKind(p.kind).buff] += petBuffValue(p) * petMul;
@@ -174,6 +174,7 @@ export function farmBuffs(e) {
   b.grow += e.crewBuff('grow');
   b.patience += e.crewBuff('patience');
   b.luck += e.crewBuff('luck');
+  b.luck += 0.02 * ((e.state.attrs && e.state.attrs.hoki) || 0);
   b.tip += e.crewBuff('tip');
   return b;
 }

@@ -128,7 +128,7 @@ describe('peternakan', () => {
     old.v = 5; delete old.farm.habs; delete old.story;
     old.farm.slots = [null, { itemId: 'lele', feed: null, plantedAt: 1, readyAt: 2, cost: 5 }, null, null];
     const m = migrate(old);
-    expect(m.v).toBe(10);
+    expect(m.v).toBe(11);
     expect(m.farm.habs.length).toBe(4);
     expect(m.farm.habs[1]).toBe('kolam');
     expect(m.story.ch).toBe(0);
@@ -294,7 +294,7 @@ describe('inventori pet', () => {
     const old = JSON.parse(JSON.stringify(e.state));
     old.v = 6; delete old.pets.book; old.pets.owned.push({ id: 9, kind: 'hoki', rarity: 'rare' });
     const m = migrate(old);
-    expect(m.v).toBe(10);
+    expect(m.v).toBe(11);
     expect(m.pets.book.hoki.rare).toBe(1);
   });
 });
@@ -331,7 +331,7 @@ describe('lahan berlevel dengan daftar penghuni', () => {
     delete old.farm.levels;
     old.farm.slots = [null, { itemId: 'lele', feed: null, plantedAt: 1, readyAt: 2, qty: 6, cost: 5 }, null];
     const m = migrate(old);
-    expect(m.v).toBe(10);
+    expect(m.v).toBe(11);
     expect(m.farm.slots[1].length).toBe(1);
     expect(m.farm.levels).toEqual([1, 3, 1]);
     expect(validateState(m)).toEqual([]);
@@ -434,7 +434,7 @@ describe('v10: aturan jual, gudang, pet', () => {
   it('migrasi v9 menambah policy dan pets.extra', () => {
     const old = newState('mig'); old.v = 9; delete old.policy; delete old.pets.extra;
     const m = migrate(old);
-    expect(m.v).toBe(10);
+    expect(m.v).toBe(11);
     expect(m.policy.obralPct).toBeGreaterThan(0);
     expect(m.pets.extra).toBe(0);
   });

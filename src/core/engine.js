@@ -1,5 +1,5 @@
 import {
-  CATEGORIES, ITEMS, CUSTOMER_TYPES, UPGRADES, QUALITIES, SKILLS, POTIONS, STAFF, SHARES, PROPERTIES, EVENTS,
+  CATEGORIES, ITEMS, CUSTOMER_TYPES, UPGRADES, QUALITIES, SKILLS, skillCost, perkNeed, getAttr, POTIONS, STAFF, SHARES, PROPERTIES, EVENTS,
   SHOP_LEVELS, STAR_THRESH, STAR_POINTS, STAR_PERKS, DEPOSIT_TERMS, DEPOSIT_MIN, DEPOSIT_MAX_ACTIVE,
   SHARE_MIN_PRICE, SHARE_SELL_FEE, SHARE_HISTORY, PROPERTY_SELL_RATE, LOAN_TERMS, LOAN_MIN, LOAN_STEP,
   LOAN_MAX_ACTIVE, LOAN_LATE_FEE, BREED_FEE_RATE, BREED_BASE_SLOTS, SKILL_POINT_EVERY_DAYS, SKILL_POINT_EVERY_FULL_DAYS,
@@ -17,7 +17,7 @@ import { planRegulars, onRegularPaid, maxBondLevel, claimRegular } from './regul
 import { ensureQuests, trackQuests, claimQuest, checkAchievements, claimAchievement } from './goals.js';
 
 export const DAY_LENGTH_SEC = 90; // lama jendela pelanggan datang pada kecepatan 1x
-export const STATE_VERSION = 10;
+export const STATE_VERSION = 11;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -52,6 +52,7 @@ export function newState(seed = Date.now() % 2147483647) {
     shopLevel: 1,
     upgrades,
     skills: {},
+    attrs: { dagang: 0, karisma: 0, tangkas: 0, hoki: 0 },
     policy: farm.newPolicy(),
     potions: {},
     buffs: {},
@@ -94,7 +95,8 @@ export function migrate(input) {
   if (input.v === 6) return migrate(migrateV6(input));
   if (input.v === 7) return migrate(migrateV7(input));
   if (input.v === 8) return migrate(migrateV8(input));
-  if (input.v === 9) return migrateV9(input);
+  if (input.v === 9) return migrate(migrateV9(input));
+  if (input.v === 10) return migrateV10(input);
   return input;
 }
 
@@ -124,6 +126,19 @@ function migrateV3(input) {
 
 // v8 -> v9: karyawan menjadi daftar orang bersama lisensi dan slot. Karyawan lama tetap bekerja:
 // tiap karyawan lama mendapat lisensi, satu orang, dan satu slot bonus.
+// v10 -> v11: skill dirombak jadi skill tree + perk + atribut. Semua rank direset dan poin kembali penuh.
+// Slot karyawan dari skill lama dipertahankan lewat slot bonus supaya tim yang ada tidak hilang.
+function migrateV10(input) {
+  const s = structuredClone(input);
+  s.v = 11;
+  const old = s.skills || {};
+  const slots = Math.min(6, (old.tim || 0) + (old.tim_besar || 0));
+  if (s.crew) s.crew.bonusSlots = Math.max(s.crew.bonusSlots || 0, slots);
+  s.skills = {};
+  s.attrs = { dagang: 0, karisma: 0, tangkas: 0, hoki: 0 };
+  return s;
+}
+
 // v9 -> v10: aturan jual per kelangkaan, auto-sell pet, perluasan kandang pet.
 function migrateV9(input) {
   const s = structuredClone(input);
@@ -355,7 +370,7 @@ export class GameEngine {
     const sk = (id) => s.skills[id] || 0;
     const up = (id) => s.upgrades[id] || 0;
     const bf = (id) => (s.buffs[id] || 0) > 0;
-    const count = P.count * (1 + 0.12 * up('dekorasi')) * (1 + 0.08 * sk('promosi')) * (1 + 0.05 * sk('setia')) * (1 + 0.06 * sk('iklan')) * (bf('pemikat') ? 1.3 : 1) * (1 + crew.crewBuff(this, 'count')) * (1 + 0.1 * up('renovasi')) * ev.count;
+    const count = P.count * (1 + 0.12 * up('dekorasi')) * (1 + 0.08 * sk('promosi')) * (1 + 0.01 * this.attrLevel('karisma')) * (1 + 0.05 * sk('setia')) * (1 + 0.06 * sk('iklan')) * (bf('pemikat') ? 1.3 : 1) * (1 + crew.crewBuff(this, 'count')) * (1 + 0.1 * up('renovasi')) * ev.count;
     const disc = Math.min(0.5, P.disc + 0.025 * sk('tawar') + 0.03 * up('member') + (bf('borong') ? 0.12 : 0));
     const wtp = P.wtp + 0.03 * sk('harga_prima') + (bf('hartawan') ? 0.15 : 0) + ev.wtp;
     const vip = P.vip * (1 + 0.15 * sk('vipmagnet')) * (bf('vip') ? 2 : 1) * ev.vip;
@@ -365,7 +380,7 @@ export class GameEngine {
     const repGain = (1 + 0.12 * sk('ramah') + 0.1 * sk('viral') + (bf('sahabat') ? 0.5 : 0));
     const repLoss = Math.max(0.1, 1 - 0.12 * sk('ramah') - (bf('sahabat') ? 0.5 : 0));
     const payTime = Math.max(0.15, 1 - 0.15 * up('kasir_modern') - 0.12 * sk('kasir_cepat'));
-    const payMul = (1 + 0.05 * sk('lidah_emas') + 0.03 * sk('penjual_ulung')) * (1 + crew.crewBuff(this, 'price'));
+    const payMul = (1 + 0.05 * sk('lidah_emas') + 0.03 * sk('penjual_ulung') + 0.005 * this.attrLevel('dagang')) * (1 + crew.crewBuff(this, 'price'));
     return { count, disc, wtp, vip, rent, repGain, repLoss, payTime, payMul, event: ev };
   }
 
@@ -525,15 +540,37 @@ export class GameEngine {
   }
 
   skillPointsSpent() {
-    return Object.values(this.state.skills).reduce((a, b) => a + b, 0);
+    let n = 0;
+    for (const [id, rank] of Object.entries(this.state.skills)) {
+      const def = getSkill(id);
+      for (let r = 0; r < rank; r++) n += skillCost(def, r);
+    }
+    return n;
   }
+
+  skillCostNext(id) { return skillCost(getSkill(id), this.skillRank(id)); }
+
+  // ---------- Atribut ----------
+  attrPointsTotal() {
+    const s = this.state;
+    return 2 * (s.stars - 1) + (s.shopLevel - 1) + (s.story ? s.story.ch : 0);
+  }
+  attrPointsSpent() { return Object.values(this.state.attrs).reduce((a, b) => a + b, 0); }
+  attrPointsFree() { return this.attrPointsTotal() - this.attrPointsSpent(); }
+  attrLevel(id) { return this.state.attrs[id] || 0; }
+  addAttr(id) {
+    getAttr(id);
+    if (this.attrPointsFree() < 1) throw new Error('Poin atribut habis');
+    this.state.attrs[id] = this.attrLevel(id) + 1;
+  }
+  resetAttrs() { this.state.attrs = { dagang: 0, karisma: 0, tangkas: 0, hoki: 0 }; }
 
   skillPointsFree() {
     return this.skillPointsTotal() - this.skillPointsSpent();
   }
 
   // Pengali kecepatan jalan karakter (skill Langkah Cepat, +10% per rank).
-  walkMul() { return 1 + 0.1 * (this.state.skills.langkah || 0); }
+  walkMul() { return (1 + 0.1 * (this.state.skills.langkah || 0)) * (1 + 0.02 * this.attrLevel('tangkas')); }
 
   // Batas kesabaran sisa agar pelayanan masih dihitung cepat (skill Tangan Sigap melonggarkan).
   fastThreshold() { return Math.max(0.15, 0.5 - 0.08 * (this.state.skills.sigap || 0)); }
@@ -546,7 +583,12 @@ export class GameEngine {
     const sk = getSkill(id);
     if (this.skillRank(id) >= sk.max) return 'Rank maksimum';
     if (sk.req && this.skillRank(sk.req) < 1) return `Butuh ${getSkill(sk.req).name}`;
-    if (this.skillPointsFree() < 1) return 'Poin skill habis';
+    if (sk.attr) {
+      const need = perkNeed(sk, this.skillRank(id));
+      if (this.attrLevel(sk.attr) < need) return `Butuh ${getAttr(sk.attr).name} ${need}`;
+    }
+    const cost = this.skillCostNext(id);
+    if (this.skillPointsFree() < cost) return `Butuh ${cost} poin`;
     return null;
   }
 
@@ -975,7 +1017,7 @@ export class GameEngine {
     // Pelanggan sedikit: toko dilayani langsung satu per satu.
     const base = 4 + s.reputation * 0.05 + Math.min(s.day, 250) * 0.07;
     // Batas harian naik bersama level toko, bintang, renovasi, dan skill Toko Ramai.
-    const cap = 30 + 12 * s.shopLevel + 5 * s.stars + 10 * (s.skills.toko_ramai || 0) + 10 * (s.upgrades.renovasi || 0);
+    const cap = 30 + 12 * s.shopLevel + 5 * s.stars + 15 * (s.skills.toko_ramai || 0) + 10 * (s.upgrades.renovasi || 0);
     return clamp(Math.round(base * this.mods().count), 3, cap);
   }
 
@@ -1374,7 +1416,7 @@ export class GameEngine {
   _applyTheft(day, customers) {
     const s = this.state;
     if (day < 5) return [];
-    const p = THEFT_CHANCE * (this.crewCount('satpam') ? 0.2 : 1) * Math.max(0.2, 1 - 0.2 * (s.skills.pagar || 0));
+    const p = THEFT_CHANCE * (this.crewCount('satpam') ? 0.2 : 1) * Math.max(0.2, 1 - 0.25 * (s.skills.pagar || 0));
     const rng = mulberry32(hashSeed(s.seed, 'theft', day));
     const out = {};
     for (let i = 0; i < customers; i++) {
@@ -1394,7 +1436,7 @@ export class GameEngine {
   thiefPlan(day = this.state.day) {
     if (day < THIEF_FROM_DAY) return null;
     const rng = mulberry32(hashSeed(this.state.seed, 'thief', day));
-    if (rng() >= THIEF_DAY_CHANCE * Math.max(0.2, 1 - 0.2 * (this.state.skills.pagar || 0))) return null;
+    if (rng() >= THIEF_DAY_CHANCE * Math.max(0.2, 1 - 0.25 * (this.state.skills.pagar || 0))) return null;
     return { at: 0.2 + rng() * 0.55, pick: rng(), pick2: rng(), caughtRoll: rng(), done: false };
   }
 

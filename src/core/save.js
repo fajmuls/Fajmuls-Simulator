@@ -1,6 +1,6 @@
 import { auditLedger } from './ledger.js';
 import {
-  ITEMS, UPGRADES, QUALITIES, SKILLS, POTIONS, STAFF, SHARES, PROPERTIES, SHOP_LEVELS, parseLotKey,
+  ITEMS, UPGRADES, QUALITIES, SKILL_ALL, POTIONS, STAFF, SHARES, PROPERTIES, SHOP_LEVELS, parseLotKey,
 } from './catalog.js';
 import { STATE_VERSION, migrate } from './engine.js';
 
@@ -53,7 +53,7 @@ export function validateState(s) {
       if (!nonNeg(v) || (max && v > max(k))) p.push(`${name}: nilai ${k} tidak valid`);
     }
   };
-  checkMap(s.skills, 'Skill', (k) => SKILLS.some((x) => x.id === k), (k) => SKILLS.find((x) => x.id === k).max);
+  checkMap(s.skills, 'Skill', (k) => SKILL_ALL.some((x) => x.id === k), (k) => SKILL_ALL.find((x) => x.id === k).max);
   checkMap(s.potions, 'Ramuan', (k) => POTIONS.some((x) => x.id === k));
   checkMap(s.buffs, 'Buff', (k) => POTIONS.some((x) => x.id === k));
   checkMap(s.properties, 'Properti', (k) => PROPERTIES.some((x) => x.id === k), (k) => PROPERTIES.find((x) => x.id === k).max);
@@ -112,6 +112,7 @@ export function validateState(s) {
   if (!s.ach || typeof s.ach !== 'object') p.push('Pencapaian rusak');
   else for (const a of Object.values(s.ach)) if (!a || !isInt(a.day) || typeof a.claimed !== 'boolean') { p.push('Pencapaian rusak'); break; }
   if (!nonNeg(s.bonusPoints)) p.push('Poin bonus tidak valid');
+  if (!s.attrs || typeof s.attrs !== 'object' || Object.values(s.attrs).some((v) => !Number.isInteger(v) || v < 0)) p.push('Atribut tidak valid');
   if (!s.regulars || typeof s.regulars !== 'object') p.push('Langganan rusak');
   else for (const r of Object.values(s.regulars)) if (!r || !nonNeg(r.bond) || !nonNeg(r.visits) || !nonNeg(r.last) || (r.claimed !== undefined && !nonNeg(r.claimed))) { p.push('Langganan rusak'); break; }
   if (!s.tutorial || !nonNeg(s.tutorial.step) || typeof s.tutorial.done !== 'boolean') p.push('Tutorial rusak');

@@ -44,7 +44,7 @@ export function buyLicense(e, type) {
 
 export const wageOf = (e, m) => {
   const def = getStaff(m.type);
-  const cut = Math.min(0.6, 0.08 * (e.state.skills.akuntan || 0));
+  const cut = Math.min(0.6, 0.12 * (e.state.skills.akuntan || 0));
   return Math.round(def.wage * 1.5 * (1 + 0.15 * (m.lvl - 1)) * (1 - cut));
 };
 export const totalWages = (e) => e.state.crew.hired.reduce((n, m) => n + wageOf(e, m), 0);
@@ -96,7 +96,7 @@ export function crewBuff(e, key) {
 // Detik antar pekerjaan. Awal lambat, makin cepat dengan level dan skill Tim Sigap.
 const BASE_INTERVAL = { kasir: 7, penjaga: 16 };
 export function workInterval(e, m) {
-  const speed = levelMul(m) * (1 + 0.1 * (e.state.skills.tim_cepat || 0));
+  const speed = levelMul(m) * (1 + 0.15 * (e.state.skills.tim_cepat || 0));
   return BASE_INTERVAL[getStaff(m.type).job] / speed;
 }
 

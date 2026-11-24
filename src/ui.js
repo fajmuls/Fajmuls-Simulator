@@ -590,7 +590,7 @@ export class UI {
         ['langganan', 'Langganan', `${Object.keys(s.regulars).length}/${REGULARS.length} dikenal`, () => this.openLangganan(), this.regularClaimable() || null],
         ['hewan', 'Spesies', 'Buka hewan baru', () => this.openSpesies(), null],
         ['bintang', 'Bintang', starsText(s.stars), () => this.openBintang(), null],
-        ['skill', 'Skill', `${e.skillPointsFree()} poin`, () => this.openSkill(), e.skillPointsFree() > 0 ? e.skillPointsFree() : null],
+        ['skill', 'Skill', `${e.skillPointsFree()} poin · ${e.attrPointsFree()} atribut`, () => this.openSkill(), e.skillPointsFree() + e.attrPointsFree() > 0 ? e.skillPointsFree() + e.attrPointsFree() : null],
         ['aturan', 'Aturan Jual', `Gudang ${s.farm.animals.length}/${e.animalCap()}`, () => this.openAturan(), null],
         ['upgrade', 'Upgrade', `Toko Lv ${s.shopLevel}`, () => this.openUpgrade(), null],
         ['ramuan', 'Ramuan', s.stars >= 2 ? `${Object.keys(s.buffs).length} aktif` : 'butuh ★2', () => this.openRamuan(), null],

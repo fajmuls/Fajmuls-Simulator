@@ -1,5 +1,5 @@
 import {
-  CATEGORIES, ITEMS, UPGRADES, SKILLS, SKILL_BRANCHES, POTIONS, STAFF, SHARES, PROPERTIES, SHOP_LEVELS,
+  CATEGORIES, ITEMS, UPGRADES, SKILLS, PERKS, ATTRS, SKILL_BRANCHES, POTIONS, STAFF, SHARES, PROPERTIES, SHOP_LEVELS,
   STAR_PERKS, STAR_THRESH, DEPOSIT_TERMS, DEPOSIT_MIN, LOAN_TERMS, LOAN_MIN, LOAN_STEP, PROPERTY_SELL_RATE,
   getItem, getQuality, getUpgrade, getSkill, getShare, getProperty, itemsOf,
 } from './core/catalog.js';
@@ -84,24 +84,63 @@ P.openBintang = function openBintang() {
 
 // ---------- Pohon Skill ----------
 P.openSkill = function openSkill() {
-  this.openSheet('Pohon Skill', () => {
+  this.openSheet('Skill, Perk & Atribut', () => {
     const e = this.e;
+    const tab = this.skillTab || 'skill';
+    const pips = (rank, max) => h('span', { class: 'pips' }, Array.from({ length: Math.min(max, 10) }, (_v, i) => h('i', { class: i < rank ? 'on' : '' })));
     const out = [h('div', { class: 'card' },
-      h('div', { class: 'card-top' }, h('b', {}, 'Poin skill'), h('span', { class: 'price' }, `${e.skillPointsFree()} bebas / ${e.skillPointsTotal()} total`)),
-      h('div', { class: 'sub' }, 'Poin didapat dari: tiap 5 hari bermain, 3 hari misi harian penuh, tiap minggu misi mingguan penuh, bintang, level toko, dan bab cerita.'),
-      h('button', { class: 'btn secondary small', disabled: e.skillPointsSpent() === 0 || e.state.phase === 'open', onClick: () => { if (confirm('Reset semua skill? Poin dikembalikan.')) this.act(() => e.resetSkills(), 'Skill di-reset'); } }, '↺ Reset skill (gratis)'))];
-    this.skillBranch ||= SKILL_BRANCHES[0].id;
-    const used = (br) => SKILLS.filter((x) => x.branch === br.id).reduce((n, x) => n + e.skillRank(x.id), 0);
-    out.push(this.chips(SKILL_BRANCHES.map((br) => ({ id: br.id, label: `${br.icon} ${br.name}${used(br) ? ` (${used(br)})` : ''}` })), this.skillBranch, (id) => { this.skillBranch = id; this.rerender(); }));
-    for (const sk of SKILLS.filter((x) => x.branch === this.skillBranch)) {
-      const rank = e.skillRank(sk.id);
-      const why = e.canLearn(sk.id);
+      h('div', { class: 'card-top' }, h('b', {}, 'Poin skill'), h('span', { class: 'price' }, `${e.skillPointsFree()} bebas / ${e.skillPointsTotal()}`)),
+      h('div', { class: 'card-top' }, h('b', {}, 'Poin atribut'), h('span', { class: 'price' }, `${e.attrPointsFree()} bebas / ${e.attrPointsTotal()}`)),
+      h('div', { class: 'sub' }, 'Skill = pohon cabang (maks 3 rank, makin tinggi makin mahal). Perk = bonus berjenjang yang butuh level atribut. Poin dari bintang, level toko, bab cerita, misi, dan hari bermain.'),
+      h('button', { class: 'btn secondary small', disabled: e.skillPointsSpent() === 0 || e.state.phase === 'open', onClick: () => { if (confirm('Reset semua skill dan perk? Poin dikembalikan.')) this.act(() => e.resetSkills(), 'Skill di-reset'); } }, '↺ Reset skill & perk (gratis)')),
+      this.chips([{ id: 'skill', label: '🌳 Skill' }, { id: 'perk', label: '⭐ Perk' }, { id: 'attr', label: '🎯 Atribut' }], tab, (id) => { this.skillTab = id; this.rerender(); })];
+
+    if (tab === 'skill') {
+      this.skillBranch ||= SKILL_BRANCHES[0].id;
+      const used = (br) => SKILLS.filter((x) => x.branch === br.id).reduce((n, x) => n + e.skillRank(x.id), 0);
+      out.push(h('div', { class: 'chips' }, SKILL_BRANCHES.map((br) => h('button', { class: `chip${br.id === this.skillBranch ? ' on' : ''}`, onClick: () => { this.skillBranch = br.id; this.rerender(); } }, `${br.icon} ${br.name}${used(br) ? ` (${used(br)})` : ''}`))));
+      const nodes = SKILLS.filter((x) => x.branch === this.skillBranch);
+      if (!nodes.length) out.push(h('div', { class: 'card' }, 'Belum ada skill di cabang ini. Cek tab Perk.'));
+      for (let tier = 1; tier <= 4; tier++) {
+        const row = nodes.filter((x) => x.tier === tier);
+        if (!row.length) continue;
+        out.push(h('div', { class: 'sub', style: 'font-weight:800;margin-top:4px' }, `Tingkat ${tier}`));
+        for (const sk of row) {
+          const rank = e.skillRank(sk.id);
+          const why = e.canLearn(sk.id);
+          out.push(h('div', { class: 'card' },
+            h('div', { class: 'card-top' }, h('b', {}, sk.name), pips(rank, sk.max)),
+            h('div', { class: 'sub' }, sk.desc),
+            sk.req ? h('div', { class: 'sub' }, `↳ butuh ${getSkill(sk.req).name}${e.skillRank(sk.req) < 1 ? ' (belum)' : ' ✔'}`) : null,
+            rank >= sk.max ? h('span', { class: 'badge good' }, 'Maksimal')
+              : h('button', { class: 'btn small', disabled: !!why, onClick: () => this.act(() => e.learnSkill(sk.id), `${sk.name} naik`) }, why ? why : `Pelajari (${e.skillCostNext(sk.id)} poin)`)));
+        }
+      }
+      return out;
+    }
+
+    if (tab === 'attr') {
+      for (const at of ATTRS) {
+        out.push(h('div', { class: 'card' },
+          h('div', { class: 'card-top' }, h('b', {}, `${at.icon} ${at.name}`), h('span', { class: 'price' }, `Lv ${e.attrLevel(at.id)}`)),
+          h('div', { class: 'sub' }, at.text),
+          h('button', { class: 'btn small', disabled: e.attrPointsFree() < 1, onClick: () => this.act(() => e.addAttr(at.id), `${at.name} naik`) }, '+1 level (1 poin atribut)')));
+      }
+      out.push(h('button', { class: 'btn secondary small', disabled: e.attrPointsSpent() === 0, onClick: () => this.act(() => e.resetAttrs(), 'Atribut di-reset') }, '↺ Reset atribut (gratis)'));
+      return out;
+    }
+
+    this.perkAttr ||= ATTRS[0].id;
+    out.push(h('div', { class: 'chips' }, ATTRS.map((at) => h('button', { class: `chip${at.id === this.perkAttr ? ' on' : ''}`, onClick: () => { this.perkAttr = at.id; this.rerender(); } }, `${at.icon} ${at.name} ${e.attrLevel(at.id)}`))));
+    for (const pk of PERKS.filter((x) => x.attr === this.perkAttr)) {
+      const rank = e.skillRank(pk.id);
+      const why = e.canLearn(pk.id);
       out.push(h('div', { class: 'card' },
-        h('div', { class: 'card-top' }, h('b', {}, sk.name), h('span', { class: 'badge' }, `${rank}/${sk.max}`)),
-        h('div', { class: 'meter' }, h('i', { style: `width:${(rank / sk.max) * 100}%` })),
-        h('div', { class: 'sub' }, sk.desc),
-        sk.req ? h('div', { class: 'sub' }, `Syarat: ${getSkill(sk.req).name}`) : null,
-        h('button', { class: 'btn small', disabled: !!why, onClick: () => this.act(() => e.learnSkill(sk.id), `${sk.name} naik`) }, why ? why : 'Pelajari (1 poin)')));
+        h('div', { class: 'card-top' }, h('b', {}, pk.name), h('span', { class: 'badge' }, `${rank}/${pk.max}`)),
+        h('div', { class: 'meter' }, h('i', { style: `width:${(rank / pk.max) * 100}%` })),
+        h('div', { class: 'sub' }, pk.desc),
+        rank >= pk.max ? h('span', { class: 'badge good' }, 'Maksimal')
+          : h('button', { class: 'btn small', disabled: !!why, onClick: () => this.act(() => e.learnSkill(pk.id), `${pk.name} naik`) }, why ? why : `Tingkatkan (${e.skillCostNext(pk.id)} poin)`)));
     }
     return out;
   });

@@ -235,3 +235,7 @@ html.contrast { --bg: #fff; --panel: #fff; --panel-2: #f1e7d1; --muted: #2b1d12;
 .btn { min-height: 40px; padding: 7px 10px; }
 .btn.small { min-height: 32px; padding: 4px 9px; font-size: 12.5px; }
 .qbtn { min-width: 34px; height: 34px; font-size: 12px; }
+
+.pips { display: inline-flex; gap: 4px; }
+.pips i { width: 14px; height: 14px; border-radius: 50%; border: 2.5px solid var(--line); background: #fff; display: inline-block; }
+.pips i.on { background: var(--accent, #f59e0b); }

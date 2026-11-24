@@ -67,10 +67,10 @@ describe('karyawan v9', () => {
     const { e } = mk();
     const m = free(e, 'kasir');
     const t0 = e.workInterval(m);
-    e.state.skills.tim_cepat = 5;
-    expect(e.workInterval(m)).toBeCloseTo(t0 / 1.5, 5);
+    e.state.skills.tim_cepat = 3;
+    expect(e.workInterval(m)).toBeCloseTo(t0 / 1.45, 5);
     m.lvl = 5;
-    expect(e.workInterval(m)).toBeCloseTo(t0 / 1.5 / 2, 5);
+    expect(e.workInterval(m)).toBeCloseTo(t0 / 1.45 / 2, 5);
   });
 
   it('migrasi v8 -> v9 mempertahankan karyawan lama dengan slot bonus', () => {
@@ -79,7 +79,7 @@ describe('karyawan v9', () => {
     delete old.crew;
     old.staff = { kasir: true, satpam: true };
     const m = migrate(old);
-    expect(m.v).toBe(10);
+    expect(m.v).toBe(11);
     expect(m.staff).toBeUndefined();
     expect(m.crew.hired.map((x) => x.type).sort()).toEqual(['kasir', 'satpam']);
     expect(m.crew.bonusSlots).toBe(2);
