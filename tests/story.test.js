@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { GameEngine, newState } from '../src/core/engine.js';
 import { auditLedger } from '../src/core/ledger.js';
-import { CHAPTERS } from '../src/core/story.js';
+import { CHAPTERS, storyNow } from '../src/core/story.js';
 import { makeClock } from './farmbot.js';
 
 const mk = () => { const e = new GameEngine(newState(7)); const clock = makeClock(e); return { e, clock }; };
@@ -44,5 +44,16 @@ describe('cerita', () => {
     expect(e.storyNow().introSeen).toBe(false);
     e.markStoryIntro();
     expect(e.storyNow().introSeen).toBe(true);
+  });
+});
+
+describe('Musim 2', () => {
+  it('pemain yang sudah tamat bab 11 lanjut ke bab 12', () => {
+    const e = new GameEngine(newState('m2'));
+    e.state.story.ch = 11; e.state.story.done = true;
+    const n = storyNow(e);
+    expect(n.done).toBe(false);
+    expect(n.index).toBe(11);
+    expect(n.total).toBeGreaterThan(11);
   });
 });

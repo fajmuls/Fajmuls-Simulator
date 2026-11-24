@@ -62,13 +62,69 @@ export const CHAPTERS = [
     lines: ['Kamu sudah jauh melangkah, Nak. Pasar ini hidup lagi karenamu.', 'Capai bintang 5 dan jadilah Raja Pasar Satwa!'],
     need: 5, cur: (e) => e.state.stars, reward: { cash: 200000, points: 3 },
   },
+  // ---------- Musim 2: Pasar Satwa Bangkit (late game) ----------
+  {
+    id: 'tim1', title: 'Tim Pertama', goal: 'Pekerjakan 3 karyawan',
+    lines: ['Tokomu sudah ramai, Nak. Sendirian tak akan sanggup.', 'Pelajari skill Manajemen Tim, lalu rekrut karyawan di menu Karyawan.'],
+    need: 3, cur: (e) => e.state.crew.hired.length, reward: { cash: 60000, points: 1 },
+  },
+  {
+    id: 'ratusan', title: 'Antrean Mengular', goal: 'Layani 500 pelanggan',
+    lines: ['Orang-orang dari kota sebelah mulai berdatangan.', 'Jaga agar semuanya pulang dengan senang.'],
+    need: 500, cur: (e) => e.state.stats.customers || 0, reward: { cash: 100000, feeds: { super: 3 } },
+  },
+  {
+    id: 'koleksi2', title: 'Kolektor Sejati', goal: 'Kumpulkan 30 entri di Buku Koleksi',
+    lines: ['Bu Juragan kalah soal koleksi! Tapi Buku Koleksimu belum penuh.', 'Cari kombinasi spesies dan kelangkaan yang belum ada.'],
+    need: 30, cur: (e) => bookCount(e), reward: { cash: 150000, feeds: { dewa: 2 } },
+  },
+  {
+    id: 'juta', title: 'Omzet Jutaan', goal: 'Total omzet Rp 2.000.000',
+    lines: ['Dua juta rupiah! Bu Juragan mulai menawarkan kerja sama.', 'Jangan mau, Nak. Kita tumbuh sendiri.'],
+    need: 2000000, cur: (e) => e.state.stats.revenue, reward: { cash: 250000, points: 2 }, money: true,
+  },
+  {
+    id: 'tim2', title: 'Tim Impian', goal: 'Pekerjakan 6 karyawan',
+    lines: ['Kasir, penjaga stok, satpam... pasar ini berjalan hampir sendiri.', 'Tambah slot lewat Manajemen Tim dan Manajer Senior.'],
+    need: 6, cur: (e) => e.state.crew.hired.length, reward: { cash: 300000, points: 1 },
+  },
+  {
+    id: 'legend', title: 'Hewan Legendaris', goal: 'Panen hewan Legendary atau lebih langka',
+    lines: ['Konon ada hewan yang bersinar emas di kolam terdalam.', 'Pakai Pakan Dewa dan Peramal Pasar untuk memburunya.'],
+    need: 5, cur: (e) => (e.state.stats.bestRar || 0) + 1, reward: { cash: 400000, points: 2 }, flag: true,
+  },
+  {
+    id: 'ahli', title: 'Ahli Segala Bidang', goal: 'Pelajari 40 rank skill',
+    lines: ['Ilmu itu tak ada habisnya.', 'Buka Pohon Skill dan investasikan poinmu.'],
+    need: 40, cur: (e) => Object.values(e.state.skills).reduce((n, v) => n + (v || 0), 0), reward: { cash: 400000, points: 2 },
+  },
+  {
+    id: 'ribuan', title: 'Pasar Seribu Pelanggan', goal: 'Layani 1500 pelanggan',
+    lines: ['Pasar Satwa kini jadi buah bibir se-nusantara.'],
+    need: 1500, cur: (e) => e.state.stats.customers || 0, reward: { cash: 600000, points: 2 },
+  },
+  {
+    id: 'mythic', title: 'Mitos Itu Nyata', goal: 'Panen hewan Mythic atau lebih langka',
+    lines: ['Mythic... Kakekku hanya pernah mendengar ceritanya.', 'Kejar terus, Nak!'],
+    need: 6, cur: (e) => (e.state.stats.bestRar || 0) + 1, reward: { cash: 1000000, points: 3 }, flag: true,
+  },
+  {
+    id: 'kaya', title: 'Saudagar Kaya', goal: 'Miliki uang Rp 5.000.000',
+    lines: ['Kas tokomu membengkak. Pandai-pandailah berinvestasi.', 'Tapi ingat pajak kekayaan.'],
+    need: 5000000, cur: (e) => e.state.ledger.balance, reward: { cash: 1500000, points: 2 }, money: true,
+  },
+  {
+    id: 'nusantara', title: 'Raja Seluruh Nusantara', goal: 'Total omzet Rp 20.000.000',
+    lines: ['Sudah kuduga kamu akan sampai di sini.', 'Pasar Satwa kini milik semua orang. Terima kasih, Nak, sudah menghidupkannya kembali.'],
+    need: 20000000, cur: (e) => e.state.stats.revenue, reward: { cash: 3000000, points: 5 }, money: true,
+  },
 ];
 
 export const NPC = { id: 'pak', name: 'Pak Pasar' };
 
 export function storyNow(e) {
   const st = e.state.story;
-  if (st.done || st.ch >= CHAPTERS.length) return { done: true, total: CHAPTERS.length };
+  if (st.ch >= CHAPTERS.length) return { done: true, total: CHAPTERS.length };
   const c = CHAPTERS[st.ch];
   const cur = Math.min(c.need, c.cur(e));
   return { done: false, index: st.ch, total: CHAPTERS.length, chapter: c, cur, need: c.need, ready: cur >= c.need, introSeen: st.intro === st.ch };
