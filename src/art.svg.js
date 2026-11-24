@@ -180,6 +180,9 @@ const STAFF_BODY = {
   badut: { shirt: '#ef4444', hat: '#a855f7', extra: `<circle cx="24" cy="21" r="3" fill="#ef4444" ${st}/>` },
   petani: { shirt: '#65a30d', hat: '#fbbf24', extra: `<path d="M31 40 L38 28" ${st} fill="none"/>` },
   peramal: { shirt: '#7c3aed', hat: '#4c1d95', extra: `<circle cx="33" cy="34" r="4" fill="#a5f3fc" ${st}/>` },
+  promotor: { shirt: '#f97316', hat: '#fde047', extra: `<path d="M31 28 L40 24 L40 34 Z" fill="#fff" ${st}/>` },
+  pedagang: { shirt: '#0f766e', hat: null, extra: `<rect x="29" y="30" width="11" height="9" rx="1" fill="#fde68a" ${st}/>` },
+  saudagar: { shirt: '#111827', hat: '#b45309', extra: `<path d="M24 36 l3 -3 l3 3 l-3 4 z" fill="#67e8f9" ${st}/>` },
   perawat: { shirt: '#f9fafb', hat: '#f9fafb', extra: `<path d="M22 31 H26 M24 29 V33" stroke="#ef4444" stroke-width="2.2"/>` },
 };
 export function staffSVG(id) {

@@ -187,3 +187,29 @@ describe('penjaga stok', () => {
     expect(e.keeperPlan()).toBeNull();
   });
 });
+
+describe('v10: batas pelanggan, karyawan dan skill baru', () => {
+  it('batas harian naik dengan level toko dan skill Toko Ramai', () => {
+    const e = new GameEngine(newState('cap'));
+    e.state.shopLevel = 1; e.state.stars = 1; e.state.reputation = 500; e.state.day = 200;
+    e.state.upgrades.dekorasi = 4;
+    const low = e.customerCount();
+    e.state.shopLevel = 5; e.state.stars = 5; e.state.skills.toko_ramai = 5;
+    expect(e.customerCount()).toBeGreaterThan(low);
+    expect(e.customerCount()).toBeGreaterThan(43);
+  });
+  it('setiap karyawan baru punya tepat satu buff atau pekerjaan', () => {
+    for (const id of ['promotor', 'pedagang', 'saudagar']) {
+      const d = STAFF.find((x) => x.id === id);
+      expect(Boolean(d.buff) !== Boolean(d.job)).toBe(true);
+    }
+  });
+  it('Pedagang menaikkan harga jual, Manajer Senior menambah slot', () => {
+    const e = new GameEngine(newState('px'));
+    const before = e.mods().payMul;
+    e.state.crew.licenses.pedagang = true; e.state.skills.tim = 1; e.state.skills.tim_besar = 2;
+    expect(e.crewSlots()).toBe(3);
+    e.state.crew.hired.push({ uid: 99, type: 'pedagang', lvl: 1 });
+    expect(e.mods().payMul).toBeGreaterThan(before);
+  });
+});

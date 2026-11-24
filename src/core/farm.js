@@ -148,6 +148,7 @@ export function farmBuffs(e) {
   b.grow += e.crewBuff('grow');
   b.patience += e.crewBuff('patience');
   b.luck += e.crewBuff('luck');
+  b.tip += e.crewBuff('tip');
   return b;
 }
 

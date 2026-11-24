@@ -327,7 +327,7 @@ export class GameEngine {
     const sk = (id) => s.skills[id] || 0;
     const up = (id) => s.upgrades[id] || 0;
     const bf = (id) => (s.buffs[id] || 0) > 0;
-    const count = P.count * (1 + 0.12 * up('dekorasi')) * (1 + 0.08 * sk('promosi')) * (bf('pemikat') ? 1.3 : 1) * (1 + crew.crewBuff(this, 'count')) * (1 + 0.1 * up('renovasi')) * ev.count;
+    const count = P.count * (1 + 0.12 * up('dekorasi')) * (1 + 0.08 * sk('promosi')) * (1 + 0.05 * sk('setia')) * (1 + 0.06 * sk('iklan')) * (bf('pemikat') ? 1.3 : 1) * (1 + crew.crewBuff(this, 'count')) * (1 + 0.1 * up('renovasi')) * ev.count;
     const disc = Math.min(0.5, P.disc + 0.025 * sk('tawar') + 0.03 * up('member') + (bf('borong') ? 0.12 : 0));
     const wtp = P.wtp + 0.03 * sk('harga_prima') + (bf('hartawan') ? 0.15 : 0) + ev.wtp;
     const vip = P.vip * (1 + 0.15 * sk('vipmagnet')) * (bf('vip') ? 2 : 1) * ev.vip;
@@ -337,7 +337,7 @@ export class GameEngine {
     const repGain = (1 + 0.12 * sk('ramah') + 0.1 * sk('viral') + (bf('sahabat') ? 0.5 : 0));
     const repLoss = Math.max(0.1, 1 - 0.12 * sk('ramah') - (bf('sahabat') ? 0.5 : 0));
     const payTime = Math.max(0.15, 1 - 0.15 * up('kasir_modern') - 0.12 * sk('kasir_cepat'));
-    const payMul = 1 + 0.05 * sk('lidah_emas');
+    const payMul = (1 + 0.05 * sk('lidah_emas') + 0.03 * sk('penjual_ulung')) * (1 + crew.crewBuff(this, 'price'));
     return { count, disc, wtp, vip, rent, repGain, repLoss, payTime, payMul, event: ev };
   }
 
@@ -945,8 +945,10 @@ export class GameEngine {
   customerCount() {
     const s = this.state;
     // Pelanggan sedikit: toko dilayani langsung satu per satu.
-    const base = 4 + s.reputation * 0.05 + Math.min(s.day, 80) * 0.06;
-    return clamp(Math.round(base * this.mods().count), 3, 40);
+    const base = 4 + s.reputation * 0.05 + Math.min(s.day, 250) * 0.07;
+    // Batas harian naik bersama level toko, bintang, renovasi, dan skill Toko Ramai.
+    const cap = 30 + 12 * s.shopLevel + 5 * s.stars + 10 * (s.skills.toko_ramai || 0) + 10 * (s.upgrades.renovasi || 0);
+    return clamp(Math.round(base * this.mods().count), 3, cap);
   }
 
   _qtyCap(item) {
@@ -1343,7 +1345,7 @@ export class GameEngine {
   _applyTheft(day, customers) {
     const s = this.state;
     if (day < 5) return [];
-    const p = THEFT_CHANCE * (this.crewCount('satpam') ? 0.2 : 1);
+    const p = THEFT_CHANCE * (this.crewCount('satpam') ? 0.2 : 1) * Math.max(0.2, 1 - 0.2 * (s.skills.pagar || 0));
     const rng = mulberry32(hashSeed(s.seed, 'theft', day));
     const out = {};
     for (let i = 0; i < customers; i++) {
@@ -1363,7 +1365,7 @@ export class GameEngine {
   thiefPlan(day = this.state.day) {
     if (day < THIEF_FROM_DAY) return null;
     const rng = mulberry32(hashSeed(this.state.seed, 'thief', day));
-    if (rng() >= THIEF_DAY_CHANCE) return null;
+    if (rng() >= THIEF_DAY_CHANCE * Math.max(0.2, 1 - 0.2 * (this.state.skills.pagar || 0))) return null;
     return { at: 0.2 + rng() * 0.55, pick: rng(), pick2: rng(), caughtRoll: rng(), done: false };
   }
 

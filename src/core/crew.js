@@ -6,7 +6,7 @@ import * as farm from './farm.js';
 
 export const newCrew = () => ({ licenses: {}, hired: [], nextUid: 1, bonusSlots: 0, keeper: { rules: {}, harvest: true, autoBuy: true } });
 
-export const crewSlots = (e) => (e.state.skills.tim || 0) + (e.state.crew.bonusSlots || 0);
+export const crewSlots = (e) => (e.state.skills.tim || 0) + (e.state.skills.tim_besar || 0) + (e.state.crew.bonusSlots || 0);
 export const crewList = (e) => e.state.crew.hired;
 export const crewCount = (e, type) => e.state.crew.hired.filter((m) => m.type === type).length;
 export const levelMul = (m) => 1 + 0.25 * (m.lvl - 1); // kekuatan efek dan kecepatan kerja per level
