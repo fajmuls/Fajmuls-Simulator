@@ -214,17 +214,41 @@ P.openKaryawan = function openKaryawan() {
       out.push(h('div', { class: 'card' },
         h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: k.harvest, onChange: (ev) => this.act(() => e.setKeeperOpts({ harvest: ev.target.checked }), 'Disimpan') }), h('span', { class: 'sub' }, 'Panen otomatis yang sudah matang')),
         h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: k.autoBuy, onChange: (ev) => this.act(() => e.setKeeperOpts({ autoBuy: ev.target.checked }), 'Disimpan') }), h('span', { class: 'sub' }, 'Beli bibit otomatis bila uang cukup'))));
-      out.push(h('div', { class: 'sub', style: 'font-weight:700' }, 'Tanam lagi bila stok kurang dari:'));
-      for (const it of e.unlockedItems()) {
-        const r = k.rules[it.id];
-        const below = h('input', { type: 'number', min: 0, max: 50, value: r ? r.below : 0, inputMode: 'numeric', style: 'width:56px' });
-        const qty = h('input', { type: 'number', min: 1, max: 6, value: r ? r.qty : 1, inputMode: 'numeric', style: 'width:48px' });
-        const feed = h('select', {}, [h('option', { value: '' }, 'Tanpa pakan'), ...FEEDS.filter((f) => feedOpen(e, f)).map((f) => h('option', { value: f.id, selected: r && r.feed === f.id }, f.name))]);
+      // Draft disimpan di this._keeperDraft supaya mengubah satu baris tidak menghapus baris lain.
+      const items = e.unlockedItems();
+      const draft = this._keeperDraft || (this._keeperDraft = {});
+      for (const it of items) {
+        if (!draft[it.id]) { const r = k.rules[it.id]; draft[it.id] = { below: r ? r.below : 0, qty: r ? r.qty : 1, feed: r ? r.feed || '' : '' }; }
+      }
+      const feeds = FEEDS.filter((f) => feedOpen(e, f));
+      const dirty = items.some((it) => { const r = k.rules[it.id]; const d = draft[it.id]; return (r ? r.below : 0) !== d.below || (r ? r.qty : 1) !== d.qty || (r ? r.feed || '' : '') !== d.feed; });
+      const allBelow = h('input', { type: 'number', min: 0, max: 50, value: 5, inputMode: 'numeric', style: 'width:52px' });
+      const allQty = h('input', { type: 'number', min: 1, max: 6, value: 2, inputMode: 'numeric', style: 'width:44px' });
+      const allFeed = h('select', {}, [h('option', { value: '' }, 'Tanpa pakan'), ...feeds.map((f) => h('option', { value: f.id }, f.name))]);
+      out.push(h('div', { class: 'card' },
+        h('div', { class: 'card-top' }, h('b', {}, 'Atur semua sekaligus')),
+        h('div', { class: 'row' }, h('span', { class: 'sub' }, 'Stok <'), allBelow, h('span', { class: 'sub' }, 'jml'), allQty, h('div', { class: 'grow' }, allFeed)),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn small grow secondary', onClick: () => {
+            for (const it of items) draft[it.id] = { below: Math.max(0, Math.min(50, Number(allBelow.value) || 0)), qty: Math.max(1, Math.min(6, Number(allQty.value) || 1)), feed: allFeed.value };
+            this.openKaryawan();
+          } }, 'Isi ke semua'),
+          h('button', { class: 'btn small danger', onClick: () => { for (const it of items) draft[it.id] = { below: 0, qty: 1, feed: '' }; this.openKaryawan(); } }, 'Kosongkan'))));
+      out.push(h('div', { class: 'sub', style: 'font-weight:700' }, 'Tanam lagi bila stok kurang dari (ubah lalu tekan Simpan semua):'));
+      for (const it of items) {
+        const d = draft[it.id];
+        const below = h('input', { type: 'number', min: 0, max: 50, value: d.below, inputMode: 'numeric', style: 'width:52px', onInput: (ev) => { d.below = Math.max(0, Math.min(50, Number(ev.target.value) || 0)); } });
+        const qty = h('input', { type: 'number', min: 1, max: 6, value: d.qty, inputMode: 'numeric', style: 'width:44px', onInput: (ev) => { d.qty = Math.max(1, Math.min(6, Number(ev.target.value) || 1)); } });
+        const feed = h('select', { onChange: (ev) => { d.feed = ev.target.value; } }, [h('option', { value: '' }, 'Tanpa pakan'), ...feeds.map((f) => h('option', { value: f.id, selected: d.feed === f.id }, f.name))]);
         out.push(h('div', { class: 'card' },
           h('div', { class: 'card-top' }, h('b', {}, iname(it)), h('span', { class: 'sub' }, `stok ${e.keeperStock(it.id)}`)),
-          h('div', { class: 'row' }, h('span', { class: 'sub' }, '<'), below, h('span', { class: 'sub' }, 'jml'), qty, h('div', { class: 'grow' }, feed),
-            h('button', { class: 'btn small', onClick: () => this.act(() => e.setKeeperRule(it.id, { below: Number(below.value) || 0, qty: Number(qty.value) || 1, feed: feed.value || null }), 'Aturan disimpan') }, 'Simpan'))));
+          h('div', { class: 'row' }, h('span', { class: 'sub' }, '<'), below, h('span', { class: 'sub' }, 'jml'), qty, h('div', { class: 'grow' }, feed))));
       }
+      out.push(h('div', { class: 'row', style: 'position:sticky;bottom:0;padding:6px 0;background:var(--cream,#fff3d6)' },
+        h('button', { class: 'btn grow', onClick: () => {
+          this.act(() => { for (const it of items) { const d = draft[it.id]; e.setKeeperRule(it.id, { below: d.below, qty: d.qty, feed: d.feed || null }); } }, dirty ? 'Semua aturan disimpan' : 'Aturan disimpan');
+          this._keeperDraft = null;
+        } }, dirty ? 'Simpan semua ●' : 'Simpan semua')));
     }
     return out;
   });

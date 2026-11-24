@@ -48,7 +48,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #game { position: absolute; inset: 0; }
 #game canvas { display: block; touch-action: none; }
 #float { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
-.fcol { position: absolute; left: 8px; top: 8px; right: 60px; display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
+.fcol { position: absolute; left: 6px; top: 6px; display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
+.fcol .fchip { min-height: 26px; padding: 2px 8px 2px 5px; font-size: 11.5px; opacity: .93; }
 .fzoom { position: absolute; right: 8px; top: 8px; display: grid; gap: 6px; }
 #float button { pointer-events: auto; }
 .fchip { display: inline-flex; align-items: center; gap: 5px; background: var(--panel); border: 2.5px solid var(--line); border-radius: 999px; padding: 3px 11px 3px 6px; font-size: 12.5px; font-weight: 800; box-shadow: var(--shadow); min-height: 30px; }

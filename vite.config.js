@@ -8,7 +8,7 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Pasar Satwa by Fajmuls',
+        name: 'Pasar Satwa',
         short_name: 'Pasar Satwa',
         description: 'Game simulator toko hewan: belanja, jual, breeding, investasi, dan kembangkan pasarmu.',
         lang: 'id',

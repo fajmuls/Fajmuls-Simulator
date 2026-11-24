@@ -655,7 +655,7 @@ export class UI {
           h('button', { class: 'btn danger', disabled: e.state.phase === 'open', onClick: () => {
             if (confirm('Hapus progres dan mulai game baru? Ini tidak bisa dibatalkan.')) { this.ctx.newGame(); this.closeModal(); }
           } }, 'Mulai game baru')),
-        h('div', { class: 'sub', style: 'text-align:center' }, `Pasar Satwa by Fajmuls · v7.0 · 1 hari = ${DAY_LENGTH_SEC}s pada 1x`),
+        h('div', { class: 'sub', style: 'text-align:center' }, `Pasar Satwa · v10 · 1 hari = ${DAY_LENGTH_SEC}s pada 1x`),
       ];
     });
   }
