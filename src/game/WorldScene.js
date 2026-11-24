@@ -10,7 +10,7 @@ import { PET_KINDS } from '../core/farm.js';
 import { storyNow } from '../core/story.js';
 import {
   WORLD, BOX, GATES, PLOTS, PLOT_SIZE, plotFront, RACK_Y, rackX, QUEUE_Y, ROAD_Y, ENTRY_X, slotX, COUNTER, SPOTS, ROADS, BUILDINGS,
-  decorSpots, buildNav, zoneOf, fenceRects, shopWalls,
+  decorSpots, buildNav, zoneOf, fenceRects, shopWalls, YARDS,
 } from './worldmap.js';
 
 export { WORLD };
@@ -208,13 +208,21 @@ export class WorldScene extends Phaser.Scene {
     c.fillStyle = '#8fd36f'; c.fillRect(0, 0, WORLD.w, WORLD.h);
     c.fillStyle = '#9ddc7c';
     for (let i = 0; i < 40; i++) { c.beginPath(); c.ellipse(rng() * WORLD.w, rng() * WORLD.h, (120 + rng() * 160) / 2, (60 + rng() * 80) / 2, 0, 0, Math.PI * 2); c.fill(); }
+    // halaman pasar dan rumah pet (digambar sebelum jalan supaya jalan terlihat masuk)
+    const yardBox = (x, y, w, h, c1, c2, r = 26) => {
+      c.fillStyle = '#3b2a1c'; rr(x, y, w, h, r); c.fill();
+      c.fillStyle = c1; rr(x + 5, y + 5, w - 10, h - 10, r - 4); c.fill();
+      c.strokeStyle = c2; c.globalAlpha = 0.8; c.lineWidth = 3; rr(x + 16, y + 16, w - 32, h - 32, 16); c.stroke(); c.globalAlpha = 1;
+    };
+    yardBox(YARDS.pasar.x, YARDS.pasar.y, YARDS.pasar.w, YARDS.pasar.h, '#b6e68f', '#8bd070');
+    yardBox(YARDS.pet.x, YARDS.pet.y, YARDS.pet.w, YARDS.pet.h, '#b6e68f', '#8bd070');
     // jalan
     const strokeRoads = (width, color) => { c.strokeStyle = color; c.lineWidth = width; c.lineCap = 'butt'; for (const r of ROADS) { c.beginPath(); c.moveTo(r[0][0], r[0][1]); c.lineTo(r[1][0], r[1][1]); c.stroke(); } };
     strokeRoads(80, '#3b2a1c');
-    c.fillStyle = '#3b2a1c'; c.beginPath(); c.arc(700, 360, 158, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#3b2a1c'; c.beginPath(); c.arc(700, 360, 126, 0, Math.PI * 2); c.fill();
     strokeRoads(72, '#f1d9a0');
-    c.fillStyle = '#f1d9a0'; c.beginPath(); c.arc(700, 360, 150, 0, Math.PI * 2); c.fill();
-    c.strokeStyle = '#e0c27c'; c.lineWidth = 4; c.beginPath(); c.arc(700, 360, 128, 0, Math.PI * 2); c.stroke();
+    c.fillStyle = '#f1d9a0'; c.beginPath(); c.arc(700, 360, 118, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = '#e0c27c'; c.lineWidth = 4; c.beginPath(); c.arc(700, 360, 98, 0, Math.PI * 2); c.stroke();
     // halaman pasar, rumah pet, kebun, kandang
     const box = (x, y, w, h, c1, c2, r = 26) => {
       c.fillStyle = '#3b2a1c'; rr(x, y, w, h, r); c.fill();
@@ -223,8 +231,6 @@ export class WorldScene extends Phaser.Scene {
     };
     box(BOX.kolam.x, BOX.kolam.y, BOX.kolam.w, BOX.kolam.h, '#a6e283', '#7bc45e');
     box(BOX.kandang.x, BOX.kandang.y, BOX.kandang.w, BOX.kandang.h, '#a6e283', '#7bc45e');
-    box(60, 560, 380, 280, '#b6e68f', '#8bd070');
-    box(960, 550, 380, 290, '#b6e68f', '#8bd070');
     // lantai toko berpapan kayu
     c.fillStyle = '#3b2a1c'; rr(BOX.toko.x, 696, BOX.toko.w, BOX.toko.h, 10); c.fill();
     c.fillStyle = '#f1d9a0'; rr(BOX.toko.x + 6, 702, BOX.toko.w - 12, BOX.toko.h - 12, 8); c.fill();
@@ -236,15 +242,26 @@ export class WorldScene extends Phaser.Scene {
     for (const [x, y] of this.decor.rocks) stamp('rock', x, y, 0.5);
     for (const [x, y] of this.decor.bushes) stamp('bush', x, y, 0.6, 0.5, 1);
     // pohon pembatas tepi
-    for (let x = 30; x < WORLD.w; x += 74) { stamp(`tree${(x / 74) % 2 | 0}`, x, 14, 0.5, 0.5, 0.9); stamp(`tree${(x / 74 + 1) % 2 | 0}`, x, WORLD.h + 2, 0.5, 0.5, 0.96); }
+    for (let x = 30; x < WORLD.w; x += 74) { stamp(`tree${(x / 74) % 2 | 0}`, x, 14, 0.5, 0.5, 0.9); }
+    for (let x = 24; x < WORLD.w; x += 52) stamp('bush', x, WORLD.h - 2, 0.62, 0.5, 1);
     for (let y = 80; y < WORLD.h; y += 90) { stamp('tree0', 10, y, 0.5, 0.5, 0.96); stamp('tree1', WORLD.w - 10, y, 0.5, 0.5, 0.96); }
     // pagar kebun dan kandang
-    const fi = img('fence');
-    const fw = fi.width * 0.5;
-    const fh = fi.height * 0.5;
+    // pagar kayu: dua palang dan tiang tiap 44px, tanpa tumpang tindih di ujung
     for (const [x, y, w, h] of fenceRects()) {
-      if (w >= h) { for (let px = x + fw / 2; px < x + w + fw / 2 - 4; px += fw - 4) c.drawImage(fi, Math.min(px, x + w - fw / 2) - fw / 2, y + h / 2 - fh * 0.62, fw, fh); }
-      else for (let py = y; py < y + h; py += 30) c.drawImage(fi, x + w / 2 - fw / 2, py - fh * 0.62 + 12, fw, fh);
+      const horiz = w >= h;
+      const len = horiz ? w : h;
+      c.fillStyle = '#3b2a1c';
+      if (horiz) { rr(x - 2, y + 1, w + 4, 10, 3); c.fill(); } else { rr(x + 1, y - 2, 10, h + 4, 3); c.fill(); }
+      c.fillStyle = '#d9a05c';
+      if (horiz) { rr(x, y + 2.5, w, 3, 1.5); c.fill(); rr(x, y + 6.5, w, 3, 1.5); c.fill(); } else { rr(x + 2.5, y, 3, h, 1.5); c.fill(); rr(x + 6.5, y, 3, h, 1.5); c.fill(); }
+      const n = Math.max(1, Math.round(len / 44));
+      for (let i = 0; i <= n; i++) {
+        const t = (len * i) / n;
+        const px = horiz ? x + t : x + 6;
+        const py = horiz ? y + 6 : y + t;
+        c.fillStyle = '#3b2a1c'; rr(px - 5, py - 12, 10, 24, 3); c.fill();
+        c.fillStyle = '#c98a4b'; rr(px - 3, py - 10, 6, 20, 2); c.fill();
+      }
     }
     // dinding toko
     for (const [x, y, w, h] of shopWalls()) {
@@ -275,7 +292,7 @@ export class WorldScene extends Phaser.Scene {
     // balai dan alun-alun
     this.kantor = d(this.add.image(B.kantor.x, B.kantor.y, 'kantor').setOrigin(0.5, 1).setDisplaySize(B.kantor.w, B.kantor.h));
     this._label(700, 244, 'BALAI PASAR', 120);
-    this.add.image(800, 345, 'fountain').setOrigin(0.5, 1).setDisplaySize(120, 100).setDepth(345);
+    this.add.image(770, 350, 'fountain').setOrigin(0.5, 1).setDisplaySize(120, 100).setDepth(345);
     this.add.image(610, 420, 'signpost').setOrigin(0.5, 1).setDisplaySize(72, 80).setDepth(420);
     for (const x of [590, 810]) this.add.image(x, 260, 'lamp').setOrigin(0.5, 1).setDisplaySize(22, 56).setDepth(260);
     // pak pasar (NPC cerita)
@@ -483,7 +500,7 @@ export class WorldScene extends Phaser.Scene {
       peramal: [[745, 385], [705, 335]],
       promotor: [[610, 440], [790, 450], [700, 520]],
       pedagang: [[600, 866], [680, 876], [760, 866]],
-      saudagar: [[660, 360], [740, 360]],
+      saudagar: [[655, 340], [735, 425]],
     };
     return H[type] || [[700, 860]];
   }

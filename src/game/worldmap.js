@@ -14,10 +14,13 @@ export const BOX = {
   toko: { x: 464, y: 696, w: 472, h: 274 },
 };
 
+// Halaman pasar dan rumah pet (tanah berbatas, jalan masuk di y=760)
+export const YARDS = { pasar: { x: 56, y: 552, w: 316, h: 290 }, pet: { x: 1030, y: 550, w: 312, h: 290 } };
+
 export const GATES = { kolam: { x: 330, w: 60 }, kandang: { x: 1090, w: 60 } }; // celah di dinding bawah (y=430)
 
 export const PLOTS = {
-  kolam: [[140, 140], [310, 140], [140, 300], [310, 300]],
+  kolam: [[172, 140], [340, 140], [172, 300], [340, 300]],
   kebun: [[480, 150], [480, 290]],
   kandang: [[930, 160], [1090, 160], [1250, 160], [1010, 315], [1170, 315]],
 };
@@ -102,34 +105,40 @@ export function colliders() {
   return R;
 }
 
-export const CIRCLES = [[800, 325, 34], [590, 252, 8], [810, 252, 8]];
+export const CIRCLES = [[770, 330, 34], [590, 252, 8], [810, 252, 8]];
 
 // Dekorasi acak yang tidak boleh menutup jalan, lahan, atau pintu.
 export function decorSpots(seed = 777) {
   const rng = mulberry32(seed);
   const noDecor = [
-    [BOX.kolam.x - 20, BOX.kolam.y - 20, BOX.kolam.w + 40, BOX.kolam.h + 40],
-    [BOX.kandang.x - 20, BOX.kandang.y - 20, BOX.kandang.w + 40, BOX.kandang.h + 40],
+    [BOX.kolam.x - 20, 0, BOX.kolam.w + 40, BOX.kolam.h + 140],
+    [BOX.kandang.x - 20, 0, BOX.kandang.w + 40, BOX.kandang.h + 140],
     [BOX.toko.x - 30, 520, BOX.toko.w + 60, 470],
-    [520, 150, 360, 380], // balai dan alun-alun
-    [100, 520, 340, 280], [960, 510, 340, 300], // halaman pasar dan rumah pet
+    [520, 0, 360, 540], // balai dan alun-alun
+    [YARDS.pasar.x - 30, YARDS.pasar.y - 70, YARDS.pasar.w + 60, YARDS.pasar.h + 150], [YARDS.pet.x - 30, YARDS.pet.y - 70, YARDS.pet.w + 60, YARDS.pet.h + 150], // halaman + ruang pohon
+    [0, 960, WORLD.w, 60], // jajaran semak bawah
   ];
   const bandHit = (x, y) => ROADS.some(([a, b]) => {
     const x0 = Math.min(a[0], b[0]) - 50; const x1 = Math.max(a[0], b[0]) + 50;
-    const y0 = Math.min(a[1], b[1]) - 50; const y1 = Math.max(a[1], b[1]) + 50;
+    const y0 = Math.min(a[1], b[1]) - 80; const y1 = Math.max(a[1], b[1]) + 60;
     return x > x0 && x < x1 && y > y0 && y < y1;
   });
   const free = (x, y) => !bandHit(x, y) && !noDecor.some(([bx, by, bw, bh]) => x > bx && x < bx + bw && y > by && y < by + bh);
-  const pick = (n, tries = 900) => {
+  const taken = [];
+  // Jarak minimal antar pohon, semak, dan batu agar tidak bertumpuk.
+  const pick = (n, gap = 0, tries = 1500) => {
     const out = [];
     for (let i = 0; i < tries && out.length < n; i++) {
-      const x = 40 + rng() * (WORLD.w - 80);
-      const y = 40 + rng() * (WORLD.h - 80);
-      if (free(x, y)) out.push([Math.round(x), Math.round(y)]);
+      const x = 60 + rng() * (WORLD.w - 120);
+      const y = 40 + rng() * (WORLD.h - 100);
+      if (!free(x, y)) continue;
+      if (gap && taken.some(([tx, ty]) => Math.hypot(tx - x, ty - y) < gap)) continue;
+      out.push([Math.round(x), Math.round(y)]);
+      if (gap) taken.push([x, y]);
     }
     return out;
   };
-  return { tufts: pick(70), flowers: pick(34), bushes: pick(14), trees: pick(14), rocks: pick(8) };
+  return { tufts: pick(70), flowers: pick(34), bushes: pick(10, 70), trees: pick(9, 110), rocks: pick(6, 70) };
 }
 
 export function buildNav() {
