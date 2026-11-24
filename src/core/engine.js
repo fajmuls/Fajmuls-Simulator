@@ -17,7 +17,7 @@ import { planRegulars, onRegularPaid, maxBondLevel, claimRegular } from './regul
 import { ensureQuests, trackQuests, claimQuest, checkAchievements, claimAchievement } from './goals.js';
 
 export const DAY_LENGTH_SEC = 90; // lama jendela pelanggan datang pada kecepatan 1x
-export const STATE_VERSION = 9;
+export const STATE_VERSION = 10;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -52,6 +52,7 @@ export function newState(seed = Date.now() % 2147483647) {
     shopLevel: 1,
     upgrades,
     skills: {},
+    policy: farm.newPolicy(),
     potions: {},
     buffs: {},
     crew: crew.newCrew(),
@@ -92,7 +93,8 @@ export function migrate(input) {
   if (input.v === 5) return migrate(migrateV5(input));
   if (input.v === 6) return migrate(migrateV6(input));
   if (input.v === 7) return migrate(migrateV7(input));
-  if (input.v === 8) return migrateV8(input);
+  if (input.v === 8) return migrate(migrateV8(input));
+  if (input.v === 9) return migrateV9(input);
   return input;
 }
 
@@ -122,6 +124,15 @@ function migrateV3(input) {
 
 // v8 -> v9: karyawan menjadi daftar orang bersama lisensi dan slot. Karyawan lama tetap bekerja:
 // tiap karyawan lama mendapat lisensi, satu orang, dan satu slot bonus.
+// v9 -> v10: aturan jual per kelangkaan, auto-sell pet, perluasan kandang pet.
+function migrateV9(input) {
+  const s = structuredClone(input);
+  s.v = 10;
+  s.policy = farm.newPolicy();
+  s.pets = { ...(s.pets || farm.newPets()), extra: s.pets?.extra || 0 };
+  return s;
+}
+
 function migrateV8(input) {
   const s = structuredClone(input);
   s.v = 9;
@@ -278,6 +289,23 @@ export class GameEngine {
   harvestAll() { return farm.harvestAll(this); }
   animalCount(itemId) { return farm.animalCount(this, itemId); }
   dealerSell(id) { return farm.dealerSell(this, id); }
+  setSellMode(rarity, mode) {
+    if (!farm.RARITIES.some((r) => r.id === rarity)) throw new Error('Kelangkaan tidak dikenal');
+    if (!farm.SELL_MODES.some((m) => m.id === mode)) throw new Error('Mode tidak dikenal');
+    if (mode === 'normal') delete this.state.policy.sell[rarity]; else this.state.policy.sell[rarity] = mode;
+  }
+  setObralPct(p) { this.state.policy.obralPct = clamp(Number(p) || 0.25, 0.05, 0.6); }
+  setPetAuto(rarity, on) {
+    const i = farm.rarityIdx(rarity);
+    if (i > 4) throw new Error('Mythic dan Secret tidak bisa dijual otomatis');
+    if (on) this.state.policy.petAuto[rarity] = true; else delete this.state.policy.petAuto[rarity];
+  }
+  setPetConfirm(idx) { this.state.policy.petConfirm = clamp(Math.floor(Number(idx)), 0, 7); }
+  buyPetSpace() { return farm.buyPetSpace(this); }
+  petMax() { return farm.petMax(this); }
+  animalCap() { return farm.animalCap(this); }
+  stockFull() { return farm.stockFull(this); }
+
   hatch(eggId) { return farm.hatch(this, eggId); }
   equipPet(id) { return farm.equipPet(this, id); }
   unequipPet(id) { return farm.unequipPet(this, id); }
@@ -1108,7 +1136,8 @@ export class GameEngine {
     const cap = farm.animalValue(a) * (farm.PAY_CAP[type.id] ?? 1.25) * (customer.regularId ? 1.2 : 1);
     const ev = this.eventOf();
     const lomba = level >= 3 && ev.rare ? 1 + ev.rare : 1; // Rare ke atas
-    const price = Math.max(1, Math.round(Math.min(raw, cap) * m.payMul * lomba));
+    const obral = farm.sellMode(this, a.rarity) === 'obral' ? 1 - this.state.policy.obralPct : 1;
+    const price = Math.max(1, Math.round(Math.min(raw, cap) * m.payMul * lomba * obral));
     fm.animals.splice(idx, 1);
     const list = this.reserved.get(customer.id) || [];
     list.push({ key: lotKey(a.itemId, level), qty: 1, cost: a.cost, revenue: price, animal: a });

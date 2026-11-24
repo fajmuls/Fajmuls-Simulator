@@ -112,10 +112,12 @@ export function guardChance(e) {
 export function pickAnimalFor(e, customer, wantIdx) {
   const info = e.orderInfo(customer, wantIdx);
   let best = null;
+  const rank = (a) => (farm.sellMode(e, a.rarity) === 'obral' ? 0 : 1) * 1e12 + farm.animalValue(a);
   for (const a of e.state.farm.animals) {
     if (a.itemId !== info.itemId) continue;
     if (farm.rarityIdx(a.rarity) + 1 < info.minQuality) continue;
-    if (!best || farm.animalValue(a) < farm.animalValue(best)) best = a;
+    if (farm.sellMode(e, a.rarity) === 'tahan') continue;
+    if (!best || rank(a) < rank(best)) best = a;
   }
   return best ? best.id : null;
 }
@@ -149,7 +151,7 @@ export function stockOf(e, itemId) {
 export function keeperPlan(e, busy = new Set()) {
   const k = e.state.crew.keeper;
   const fm = e.state.farm;
-  if (k.harvest) {
+  if (k.harvest && !farm.stockFull(e)) {
     for (let i = 0; i < fm.slots.length; i++) if (!busy.has(i) && farm.spotReady(e, i) > 0) return { type: 'panen', slot: i };
   }
   const reserve = e.dailyObligations();

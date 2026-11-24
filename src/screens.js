@@ -3,7 +3,7 @@ import {
   STAR_PERKS, STAR_THRESH, DEPOSIT_TERMS, DEPOSIT_MIN, LOAN_TERMS, LOAN_MIN, LOAN_STEP, PROPERTY_SELL_RATE,
   getItem, getQuality, getUpgrade, getSkill, getShare, getProperty, itemsOf,
 } from './core/catalog.js';
-import { FEEDS, feedOpen } from './core/farm.js';
+import { FEEDS, feedOpen, RARITIES as FRAR, SELL_MODES } from './core/farm.js';
 import { UI, h, rp, rpShort, starsText, qStars, CAT_EMOJI, iname } from './ui.js';
 import { ACHIEVEMENTS, achStat, questText, questIcon, CHEST_DAILY, CHEST_WEEKLY } from './core/goals.js';
 import { audio } from './audio.js';
@@ -152,6 +152,31 @@ P.openRamuan = function openRamuan() {
           h('button', { class: 'btn secondary small grow', disabled: s.ledger.balance < p.price || s.phase === 'open', onClick: () => this.act(() => e.buyPotion(p.id), `Beli ${p.name}`) }, `Beli ${rp(p.price)}`),
           h('button', { class: 'btn small grow', disabled: have < 1 || !!active || s.phase === 'open', onClick: () => this.act(() => e.activatePotion(p.id), `${p.name} aktif`) }, 'Pakai')));
     })];
+  });
+};
+
+// ---------- Aturan Jual ----------
+P.openAturan = function openAturan() {
+  this.openSheet('Aturan Jual', () => {
+    const e = this.e;
+    const pol = e.state.policy;
+    const counts = {};
+    for (const a of e.state.farm.animals) counts[a.rarity] = (counts[a.rarity] || 0) + 1;
+    const out = [h('div', { class: 'card' },
+      h('div', { class: 'card-top' }, h('b', {}, 'Gudang hewan'), h('span', { class: 'price' }, `${e.state.farm.animals.length} / ${e.animalCap()}`)),
+      h('div', { class: 'sub' }, 'Gudang kecil di awal, naik lewat level toko, upgrade Rak, dan skill Gudang. Bila penuh, panen tertahan.'))];
+    for (const r of FRAR) {
+      const cur = pol.sell[r.id] || 'normal';
+      const sel = h('select', { onChange: (ev) => this.act(() => e.setSellMode(r.id, ev.target.value), 'Aturan disimpan', null) },
+        SELL_MODES.map((m) => h('option', { value: m.id, selected: cur === m.id }, m.name)));
+      out.push(h('div', { class: 'card' },
+        h('div', { class: 'card-top' }, h('span', { class: 'rar', style: `color:${r.color};border-color:${r.color}` }, r.name), h('span', { class: 'sub' }, `punya ${counts[r.id] || 0}`)),
+        sel, h('div', { class: 'sub' }, SELL_MODES.find((m) => m.id === cur).desc)));
+    }
+    const pct = h('select', { onChange: (ev) => this.act(() => e.setObralPct(Number(ev.target.value)), 'Disimpan', null) },
+      [0.1, 0.15, 0.25, 0.35, 0.5].map((v) => h('option', { value: v, selected: Math.abs(pol.obralPct - v) < 0.001 }, `Diskon ${Math.round(v * 100)}%`)));
+    out.push(h('div', { class: 'card' }, h('b', {}, 'Besar diskon Obral'), pct));
+    return out;
   });
 };
 

@@ -90,6 +90,32 @@ export const getEgg = (id) => {
   return e;
 };
 export const PET_MAX = 60;
+export const PET_EXPAND = 20; // slot inventori per perluasan
+export const PET_EXPAND_MAX = 10;
+export const petMax = (e) => PET_MAX + PET_EXPAND * (e.state.pets.extra || 0);
+export const petExpandCost = (e) => Math.round(20000 * Math.pow(1.8, e.state.pets.extra || 0));
+export function buyPetSpace(e) {
+  const n = e.state.pets.extra || 0;
+  if (n >= PET_EXPAND_MAX) throw new Error('Kandang pet sudah maksimal');
+  const cost = petExpandCost(e);
+  debit(e.state.ledger, e.state.day, 'upgrade', cost, 'Perluas kandang pet');
+  e.state.pets.extra = n + 1;
+  return cost;
+}
+
+// ---------- Aturan jual dan pet ----------
+export const SELL_MODES = [
+  { id: 'normal', name: 'Normal', desc: 'Dijual ke pelanggan dengan harga biasa' },
+  { id: 'obral', name: 'Obral', desc: 'Dijual ke pelanggan lebih murah, kasir menjualnya duluan' },
+  { id: 'pengepul', name: 'Langsung ke pengepul', desc: 'Begitu panen langsung dijual murah (35%) agar gudang tidak penuh' },
+  { id: 'tahan', name: 'Tahan', desc: 'Kasir tidak menjual; disimpan untuk koleksi atau pesanan khusus' },
+];
+export const newPolicy = () => ({ sell: {}, obralPct: 0.25, petAuto: {}, petConfirm: 3 });
+export const sellMode = (e, rarity) => (e.state.policy && e.state.policy.sell[rarity]) || 'normal';
+
+// Kapasitas gudang hewan: kecil di awal, naik bertahap.
+export const animalCap = (e) => 20 + 15 * ((e.state.shopLevel || 1) - 1) + 10 * (e.state.upgrades.rak || 0) + 8 * (e.state.skills.gudang || 0) + 6 * (e.state.perks?.gudang_perk || 0);
+export const stockFull = (e) => farmOf(e).animals.length >= animalCap(e);
 
 // ---------- Matematika murni ----------
 export function rarityWeights(luck) {
@@ -276,6 +302,7 @@ export function harvest(e, slot, k = 0) {
   const s = (fm.slots[slot] || [])[k];
   if (!s) throw new Error('Penghuni tidak ada');
   if (e.now() < s.readyAt) throw new Error('Belum waktunya panen');
+  if (stockFull(e)) throw new Error('Gudang hewan penuh. Jual atau lepas hewan dulu.');
   const feed = s.feed ? getFeed(s.feed) : null;
   const luck = (feed ? feed.luck : 0) + farmBuffs(e).luck * 10 + (e.eventOf().luck || 0);
   const out = [];
@@ -290,7 +317,10 @@ export function harvest(e, slot, k = 0) {
     const r = rollRarity(rng, luck);
     const size = rollSize(rng, feed ? feed.size : 0);
     const animal = { id: fm.nextAnimal++, itemId: s.itemId, rarity: RARITIES[r].id, size, cost: Math.round(s.cost) };
-    fm.animals.push(animal);
+    if (sellMode(e, animal.rarity) === 'pengepul') {
+      animal.dumped = Math.max(1, Math.round(animalValue(animal) * DEALER_RATE));
+      credit(e.state.ledger, e.state.day, 'sale', animal.dumped, 'Jual ke pengepul (otomatis)');
+    } else fm.animals.push(animal);
     out.push(animal);
     const book = (fm.book[s.itemId] ||= {});
     const rec = book[animal.rarity] || { n: 0, best: 0 };
@@ -311,8 +341,8 @@ export const spotReady = (e, i) => spotLots(e, i).filter((l) => e.now() >= l.rea
 export function harvestSpot(e, i) {
   const out = [];
   const lots = spotLots(e, i);
-  for (let k = lots.length - 1; k >= 0; k--) if (e.now() >= lots[k].readyAt) out.push(...harvest(e, i, k));
-  if (!out.length) throw new Error('Belum ada yang siap panen');
+  for (let k = lots.length - 1; k >= 0; k--) if (e.now() >= lots[k].readyAt && !stockFull(e)) out.push(...harvest(e, i, k));
+  if (!out.length) throw new Error(stockFull(e) && lots.some((l) => e.now() >= l.readyAt) ? 'Gudang hewan penuh. Jual atau lepas hewan dulu.' : 'Belum ada yang siap panen');
   return out;
 }
 
@@ -320,7 +350,7 @@ export function harvestAll(e) {
   const out = [];
   farmOf(e).slots.forEach((lots, i) => {
     for (let k = (lots || []).length - 1; k >= 0; k--) {
-      if (e.now() >= lots[k].readyAt) out.push(...harvest(e, i, k));
+      if (e.now() >= lots[k].readyAt && !stockFull(e)) out.push(...harvest(e, i, k));
     }
   });
   return out;
@@ -348,7 +378,7 @@ export function dealerSell(e, animalId) {
 export function hatch(e, eggId) {
   const egg = getEgg(eggId);
   const pets = e.state.pets;
-  if (pets.owned.length >= PET_MAX) throw new Error('Kandang pet penuh');
+  if (pets.owned.length >= petMax(e)) throw new Error('Kandang pet penuh. Perluas di tab Aturan atau jual pet lama');
   debit(e.state.ledger, e.state.day, 'buy_stock', egg.price, `Beli ${egg.name}`);
   const rng = mulberry32(hashSeed(e.state.seed, 'pet', pets.rolls));
   pets.rolls += 1;
@@ -358,6 +388,7 @@ export function hatch(e, eggId) {
   pets.owned.push(pet);
   noteBookPet(pets, pet);
   e.state.stats.hatched = (e.state.stats.hatched || 0) + 1;
+  if (e.state.policy.petAuto[pet.rarity]) pet.autoSold = releasePet(e, pet.id);
   return pet;
 }
 
@@ -410,6 +441,6 @@ export const newFarm = () => ({
   levels: Array.from({ length: START_SLOTS }, () => 1),
   animals: [], feeds: {}, bibit: {}, nextAnimal: 1, rolls: 0, book: {},
 });
-export const newPets = () => ({ owned: [], equipped: [], nextId: 1, rolls: 0, book: {} });
+export const newPets = () => ({ owned: [], equipped: [], nextId: 1, rolls: 0, book: {}, extra: 0 });
 
 export { ITEMS };

@@ -1,7 +1,7 @@
 // Layar peternakan: Kolam, Pasar, Koleksi, dan Pet. Menambah metode ke UI.prototype.
 import { ITEMS, CATEGORIES, getItem, itemsOf } from './core/catalog.js';
 import {
-  RARITIES, FEEDS, EGGS, PET_KINDS, SLOT_COSTS, MAX_SLOTS, GROW_SEC, DEALER_RATE, PET_MAX,
+  RARITIES, FEEDS, EGGS, PET_KINDS, SLOT_COSTS, MAX_SLOTS, GROW_SEC, DEALER_RATE, PET_MAX, petExpandCost as farmPetExpandCost,
   rarityIdx, rarityWeights, animalValue, sizeLabel, petBuffValue, getPetKind, expectedMult, growMs, getHabitat, slotsOfHab, slotQty, feedPrice, petSellValue as farmPetValue,
 } from './core/farm.js';
 import { UI, h, rp, toast, rarOf, CAT_EMOJI } from './ui.js';
@@ -325,9 +325,10 @@ P.openPet = function openPet() {
     const bookTotal = PET_KINDS.length * RARITIES.length;
     const bookHave = PET_KINDS.reduce((n, k) => n + RARITIES.filter((r) => book[k.id]?.[r.id]).length, 0);
     const out = [this.chips([
-      { id: 'inv', label: `🎒 Inventori (${pets.owned.length})` },
+      { id: 'inv', label: `🎒 Inventori (${pets.owned.length}/${e.petMax()})` },
       { id: 'telur', label: '🥚 Telur' },
       { id: 'buku', label: `📖 Buku ${bookHave}/${bookTotal}` },
+      { id: 'aturan', label: '⚙ Aturan' },
     ], this.petTab, (id) => { this.petTab = id; this.rerender(); })];
 
     if (this.petTab === 'telur') {
@@ -336,16 +337,16 @@ P.openPet = function openPet() {
         const r = RARITIES[rarityIdx(p.rarity)];
         out.push(h('div', { class: 'card hero hatched', style: `border-color:${r.color}` },
           h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px' }, svgEl(petSVG(p.kind, r.color), 56, 'bounce'),
-            h('div', { class: 'grow' }, h('b', {}, `Dapat ${getPetKind(p.kind).name}!`), h('div', {}, rarTag(r)), h('div', { class: 'sub' }, getPetKind(p.kind).text(petBuffValue(p)))))));
+            h('div', { class: 'grow' }, h('b', {}, `Dapat ${getPetKind(p.kind).name}!`), p.autoSold ? h('div', { class: 'sub good' }, `Otomatis terjual ${rp(p.autoSold)}`) : null, h('div', {}, rarTag(r)), h('div', { class: 'sub' }, getPetKind(p.kind).text(petBuffValue(p)))))));
       }
       for (const egg of EGGS) {
         out.push(h('div', { class: 'card' },
           h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px' }, svgEl(eggSVG(egg), 40),
             h('div', { class: 'grow' }, h('b', {}, egg.name), h('div', { class: 'sub' }, 'Isi: salah satu dari 5 jenis pet')),
-            h('button', { class: 'btn small', disabled: bal < egg.price || pets.owned.length >= PET_MAX, onClick: () => { this.act(() => { this.lastHatch = e.hatch(egg.id); return this.lastHatch; }, null, null); audio.play(rarityIdx(this.lastHatch?.rarity || 'common') >= 3 ? 'star' : 'upgrade'); } }, `Tetaskan ${rp(egg.price)}`)),
+            h('button', { class: 'btn small', disabled: bal < egg.price || pets.owned.length >= e.petMax(), onClick: () => { this.act(() => { this.lastHatch = e.hatch(egg.id); return this.lastHatch; }, this.lastHatch?.autoSold ? null : null, null); audio.play(rarityIdx(this.lastHatch?.rarity || 'common') >= 3 ? 'star' : 'upgrade'); } }, `Tetaskan ${rp(egg.price)}`)),
           oddsBar(egg.luck)));
       }
-      if (pets.owned.length >= PET_MAX) out.push(h('div', { class: 'sub bad' }, 'Inventori penuh. Jual pet lama dulu.'));
+      if (pets.owned.length >= e.petMax()) out.push(h('div', { class: 'sub bad' }, 'Inventori penuh. Perluas di tab Aturan atau jual pet lama.'));
       return out;
     }
 
@@ -360,6 +361,23 @@ P.openPet = function openPet() {
             return h('span', { class: 'rar', style: n ? `color:${r.color};border-color:${r.color}` : 'opacity:.35' }, n ? `${r.name} ×${n}` : '???');
           }))));
       }
+      return out;
+    }
+
+    if (this.petTab === 'aturan') {
+      const pol = e.state.policy;
+      out.push(h('div', { class: 'card' }, h('b', {}, 'Jual otomatis hasil gacha'),
+        h('div', { class: 'sub' }, 'Pet dengan kelangkaan yang dicentang langsung dijual saat menetas (tetap tercatat di Buku Koleksi).'),
+        ...RARITIES.slice(0, 5).map((r) => h('label', { class: 'row' },
+          h('input', { type: 'checkbox', checked: !!pol.petAuto[r.id], onChange: (ev) => this.act(() => e.setPetAuto(r.id, ev.target.checked), 'Disimpan', null) }),
+          h('span', { class: 'rar', style: `color:${r.color};border-color:${r.color}` }, r.name)))));
+      const sel = h('select', { onChange: (ev) => this.act(() => e.setPetConfirm(ev.target.value), 'Disimpan', null) },
+        [...RARITIES.map((r, i) => h('option', { value: i, selected: pol.petConfirm === i }, `${r.name} ke atas`)), h('option', { value: 7, selected: pol.petConfirm >= 7 }, 'Tidak pernah')]);
+      out.push(h('div', { class: 'card' }, h('b', {}, 'Konfirmasi sebelum jual'), h('div', { class: 'sub' }, 'Minta konfirmasi saat menjual pet dengan kelangkaan ini atau lebih tinggi.'), sel));
+      const n = pets.extra || 0;
+      out.push(h('div', { class: 'card' }, h('b', {}, `Kandang pet ${pets.owned.length}/${e.petMax()}`),
+        h('div', { class: 'sub' }, `Perluasan +20 slot (${n}/10).`),
+        h('button', { class: 'btn small', disabled: n >= 10 || bal < farmPetExpandCost(e), onClick: () => this.act(() => e.buyPetSpace(), 'Kandang pet diperluas', 'upgrade') }, n >= 10 ? 'Maksimal' : `Perluas ${rp(farmPetExpandCost(e))}`)));
       return out;
     }
 
@@ -382,7 +400,7 @@ P.openPet = function openPet() {
           h('div', { class: 'grow' }, h('b', {}, getPetKind(p.kind).name), h('div', {}, rarTag(r), on ? h('span', { class: 'badge good', style: 'margin-left:6px' }, 'dipasang') : null), h('div', { class: 'sub' }, getPetKind(p.kind).text(petBuffValue(p))))),
         h('div', { class: 'row' },
           h('button', { class: `btn small ${on ? 'secondary' : ''}`, onClick: () => this.act(() => (on ? e.unequipPet(p.id) : e.equipPet(p.id)), on ? 'Pet disimpan di inventori' : 'Pet dipasang', 'ok') }, on ? 'Lepas dari slot' : 'Pasang'),
-          h('button', { class: 'btn small secondary', onClick: () => { if (rarityIdx(p.rarity) >= 3 && !confirm('Pet ini langka. Yakin dijual? (tetap tercatat di Buku Koleksi)')) return; this.act(() => e.sellPet(p.id), (v) => `Pet terjual ${rp(v)}`, 'coin'); } }, `Jual ${rp(farmPetValue(p))}`))));
+          h('button', { class: 'btn small secondary', onClick: () => { if (rarityIdx(p.rarity) >= e.state.policy.petConfirm && !confirm('Pet ini langka. Yakin dijual? (tetap tercatat di Buku Koleksi)')) return; this.act(() => e.sellPet(p.id), (v) => `Pet terjual ${rp(v)}`, 'coin'); } }, `Jual ${rp(farmPetValue(p))}`))));
     }
     return out;
   });

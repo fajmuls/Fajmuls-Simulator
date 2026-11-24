@@ -128,7 +128,7 @@ describe('peternakan', () => {
     old.v = 5; delete old.farm.habs; delete old.story;
     old.farm.slots = [null, { itemId: 'lele', feed: null, plantedAt: 1, readyAt: 2, cost: 5 }, null, null];
     const m = migrate(old);
-    expect(m.v).toBe(9);
+    expect(m.v).toBe(10);
     expect(m.farm.habs.length).toBe(4);
     expect(m.farm.habs[1]).toBe('kolam');
     expect(m.story.ch).toBe(0);
@@ -294,7 +294,7 @@ describe('inventori pet', () => {
     const old = JSON.parse(JSON.stringify(e.state));
     old.v = 6; delete old.pets.book; old.pets.owned.push({ id: 9, kind: 'hoki', rarity: 'rare' });
     const m = migrate(old);
-    expect(m.v).toBe(9);
+    expect(m.v).toBe(10);
     expect(m.pets.book.hoki.rare).toBe(1);
   });
 });
@@ -331,7 +331,7 @@ describe('lahan berlevel dengan daftar penghuni', () => {
     delete old.farm.levels;
     old.farm.slots = [null, { itemId: 'lele', feed: null, plantedAt: 1, readyAt: 2, qty: 6, cost: 5 }, null];
     const m = migrate(old);
-    expect(m.v).toBe(9);
+    expect(m.v).toBe(10);
     expect(m.farm.slots[1].length).toBe(1);
     expect(m.farm.levels).toEqual([1, 3, 1]);
     expect(validateState(m)).toEqual([]);
@@ -426,5 +426,42 @@ describe('pencuri di kolam', () => {
     withLots(e);
     e.state.farm.slots[0] = [];
     expect(e.resolveThief()).toEqual({ none: true });
+  });
+});
+
+describe('v10: aturan jual, gudang, pet', () => {
+  const mkE = () => { const e = new GameEngine(newState('pol')); credit(e.state.ledger, 1, 'reward', 5_000_000, 'modal'); return e; };
+  it('migrasi v9 menambah policy dan pets.extra', () => {
+    const old = newState('mig'); old.v = 9; delete old.policy; delete old.pets.extra;
+    const m = migrate(old);
+    expect(m.v).toBe(10);
+    expect(m.policy.obralPct).toBeGreaterThan(0);
+    expect(m.pets.extra).toBe(0);
+  });
+  it('kapasitas gudang kecil di awal dan menahan panen saat penuh', () => {
+    const e = mkE();
+    expect(e.animalCap()).toBeLessThan(40);
+    for (let i = 0; i < e.animalCap(); i++) e.state.farm.animals.push({ id: 9000 + i, itemId: 'cacing', rarity: 'common', size: 1, cost: 1 });
+    expect(e.stockFull()).toBe(true);
+  });
+  it('mode pengepul menjual langsung saat panen, tahan dilewati kasir', () => {
+    const e = mkE();
+    e.setSellMode('common', 'pengepul');
+    expect(e.state.policy.sell.common).toBe('pengepul');
+    e.setSellMode('common', 'normal');
+    expect(e.state.policy.sell.common).toBeUndefined();
+    expect(() => e.setSellMode('common', 'ngawur')).toThrow();
+  });
+  it('auto-sell pet dan perluasan kandang', () => {
+    const e = mkE();
+    expect(() => e.setPetAuto('mythic', true)).toThrow();
+    for (const r of ['common', 'uncommon', 'rare', 'epic', 'legendary']) e.setPetAuto(r, true);
+    const before = e.state.pets.owned.length;
+    e.hatch('telur');
+    expect(e.state.pets.owned.length).toBe(before); // semua terjual otomatis
+    const max = e.petMax();
+    e.buyPetSpace();
+    expect(e.petMax()).toBe(max + 20);
+    expect(auditLedger(e.state.ledger)).toEqual([]);
   });
 });

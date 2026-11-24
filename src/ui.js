@@ -323,7 +323,7 @@ export class UI {
       this.hudBar.style.width = `${Math.round(tick.progress * 100)}%`;
     } else if (s.phase === 'idle') {
       const sp = e.starProgress();
-      this.hudLive.textContent = `Toko TUTUP · hewan ${s.farm.animals.length} · reputasi ${sp.rep.toFixed(1)}${sp.to ? ` / ${sp.to}` : ''}`;
+      this.hudLive.textContent = `Toko TUTUP · hewan ${s.farm.animals.length}/${this.e.animalCap()} · reputasi ${sp.rep.toFixed(1)}${sp.to ? ` / ${sp.to}` : ''}`;
       this.hudBar.style.width = `${sp.pct}%`;
     }
     this.syncDock();
@@ -591,6 +591,7 @@ export class UI {
         ['hewan', 'Spesies', 'Buka hewan baru', () => this.openSpesies(), null],
         ['bintang', 'Bintang', starsText(s.stars), () => this.openBintang(), null],
         ['skill', 'Skill', `${e.skillPointsFree()} poin`, () => this.openSkill(), e.skillPointsFree() > 0 ? e.skillPointsFree() : null],
+        ['aturan', 'Aturan Jual', `Gudang ${s.farm.animals.length}/${e.animalCap()}`, () => this.openAturan(), null],
         ['upgrade', 'Upgrade', `Toko Lv ${s.shopLevel}`, () => this.openUpgrade(), null],
         ['ramuan', 'Ramuan', s.stars >= 2 ? `${Object.keys(s.buffs).length} aktif` : 'butuh ★2', () => this.openRamuan(), null],
         ['karyawan', 'Karyawan', `${s.crew.hired.length}/${this.e.crewSlots()} slot`, () => this.openKaryawan(), null],
