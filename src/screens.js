@@ -92,7 +92,7 @@ P.openSkill = function openSkill() {
       h('div', { class: 'card-top' }, h('b', {}, 'Poin skill'), h('span', { class: 'price' }, `${e.skillPointsFree()} bebas / ${e.skillPointsTotal()}`)),
       h('div', { class: 'card-top' }, h('b', {}, 'Poin atribut'), h('span', { class: 'price' }, `${e.attrPointsFree()} bebas / ${e.attrPointsTotal()}`)),
       h('div', { class: 'sub' }, 'Skill = pohon cabang (maks 3 rank, makin tinggi makin mahal). Perk = bonus berjenjang yang butuh level atribut. Poin dari bintang, level toko, bab cerita, misi, dan hari bermain.'),
-      h('button', { class: 'btn secondary small', disabled: e.skillPointsSpent() === 0 || e.state.phase === 'open', onClick: () => { if (confirm('Reset semua skill dan perk? Poin dikembalikan.')) this.act(() => e.resetSkills(), 'Skill di-reset'); } }, '↺ Reset skill & perk (gratis)')),
+      h('button', { class: 'btn secondary small', disabled: e.skillPointsSpent() === 0 || e.state.phase === 'open', onClick: () => this.ask('Reset semua skill dan perk? Poin dikembalikan.', () => this.act(() => e.resetSkills(), 'Skill di-reset'), { yes: 'Reset' }) }, '↺ Reset skill & perk (gratis)')),
       this.chips([{ id: 'skill', label: '🌳 Skill' }, { id: 'perk', label: '⭐ Perk' }, { id: 'attr', label: '🎯 Atribut' }], tab, (id) => { this.skillTab = id; this.rerender(); })];
 
     if (tab === 'skill') {
@@ -147,6 +147,12 @@ P.openSkill = function openSkill() {
 };
 
 // ---------- Upgrade & Perluas ----------
+// Kolom angka dengan tombol − / + besar (nyaman di HP).
+function stepper(input, min, max) {
+  const bump = (d) => { input.value = Math.max(min, Math.min(max, (Number(input.value) || min) + d)); input.dispatchEvent(new Event('input', { bubbles: true })); };
+  return h('span', { class: 'stepper' }, h('button', { type: 'button', class: 'step', onClick: () => bump(-1), 'aria-label': 'Kurangi' }, '−'), input, h('button', { type: 'button', class: 'step', onClick: () => bump(1), 'aria-label': 'Tambah' }, '+'));
+}
+
 P.openUpgrade = function openUpgrade() {
   this.openSheet('Upgrade & Perluas', () => {
     const e = this.e;
@@ -154,7 +160,7 @@ P.openUpgrade = function openUpgrade() {
     const cur = SHOP_LEVELS[s.shopLevel - 1];
     const next = e.nextShopLevel();
     const out = [h('div', { class: 'card hero' },
-      h('div', { class: 'card-top' }, h('b', {}, `🏬 ${cur.name} (Lv ${cur.level})`), h('span', { class: 'price' }, `Kapasitas ${e.capacity()}`)),
+      h('div', { class: 'card-top' }, h('b', {}, `🏬 ${cur.name} (Lv ${cur.level})`), h('span', { class: 'price' }, `Gudang ${s.farm.animals.length}/${e.animalCap()}`)),
       next ? [
         h('div', { class: 'sub' }, `Berikutnya: ${next.name} — ${next.text}`),
         h('div', { class: 'sub' }, `Butuh ${starsText(next.needStars)} · sewa harian naik`),
@@ -203,7 +209,7 @@ P.openAturan = function openAturan() {
     for (const a of e.state.farm.animals) counts[a.rarity] = (counts[a.rarity] || 0) + 1;
     const out = [h('div', { class: 'card' },
       h('div', { class: 'card-top' }, h('b', {}, 'Gudang hewan'), h('span', { class: 'price' }, `${e.state.farm.animals.length} / ${e.animalCap()}`)),
-      h('div', { class: 'sub' }, 'Gudang kecil di awal, naik lewat level toko, upgrade Rak, dan skill Gudang. Bila penuh, panen tertahan.'))];
+      h('div', { class: 'sub' }, 'Gudang kecil di awal, naik lewat level toko (+40), upgrade Rak (+30), dan perk Gudang Rapi (+10). Bila penuh, panen tertahan.'))];
     for (const r of FRAR) {
       const cur = pol.sell[r.id] || 'normal';
       const sel = h('select', { onChange: (ev) => this.act(() => e.setSellMode(r.id, ev.target.value), 'Aturan disimpan', null) },
@@ -247,7 +253,7 @@ P.openKaryawan = function openKaryawan() {
           h('div', { class: 'sub' }, def.desc),
           h('div', { class: 'row' },
             h('button', { class: 'btn small grow', disabled: cost === null || s.ledger.balance < cost, onClick: () => this.act(() => e.upgradeCrew(m.uid), `${def.name} naik level`) }, cost === null ? 'Level maks' : `Naik level ${rp(cost)}`),
-            h('button', { class: 'btn danger small', onClick: () => { if (confirm(`Berhentikan ${def.name}?`)) this.act(() => e.fire(m.uid), `${def.name} diberhentikan`); } }, 'Berhentikan'))));
+            h('button', { class: 'btn danger small', onClick: () => this.ask(`Berhentikan ${def.name}?`, () => this.act(() => e.fire(m.uid), `${def.name} diberhentikan`), { yes: 'Berhentikan', danger: true }) }, 'Berhentikan'))));
       }
     } else if (tab === 'rekrut') {
       for (const def of STAFF) {
@@ -291,7 +297,7 @@ P.openKaryawan = function openKaryawan() {
       const allFeed = h('select', {}, [h('option', { value: '' }, 'Tanpa pakan'), ...feeds.map((f) => h('option', { value: f.id }, f.name))]);
       out.push(h('div', { class: 'card' },
         h('div', { class: 'card-top' }, h('b', {}, 'Atur semua sekaligus')),
-        h('div', { class: 'row' }, h('span', { class: 'sub' }, 'Stok <'), allBelow, h('span', { class: 'sub' }, 'jml'), allQty, h('div', { class: 'grow' }, allFeed)),
+        h('div', { class: 'row' }, h('span', { class: 'sub' }, 'Stok <'), stepper(allBelow, 0, 50), h('span', { class: 'sub' }, 'jml'), stepper(allQty, 1, 6), h('div', { class: 'grow' }, allFeed)),
         h('div', { class: 'row' },
           h('button', { class: 'btn small grow secondary', onClick: () => {
             for (const it of items) draft[it.id] = { below: Math.max(0, Math.min(50, Number(allBelow.value) || 0)), qty: Math.max(1, Math.min(6, Number(allQty.value) || 1)), feed: allFeed.value };
@@ -306,7 +312,7 @@ P.openKaryawan = function openKaryawan() {
         const feed = h('select', { onChange: (ev) => { d.feed = ev.target.value; } }, [h('option', { value: '' }, 'Tanpa pakan'), ...feeds.map((f) => h('option', { value: f.id, selected: d.feed === f.id }, f.name))]);
         out.push(h('div', { class: 'card' },
           h('div', { class: 'card-top' }, h('b', {}, iname(it)), h('span', { class: 'sub' }, `stok ${e.keeperStock(it.id)}`)),
-          h('div', { class: 'row' }, h('span', { class: 'sub' }, '<'), below, h('span', { class: 'sub' }, 'jml'), qty, h('div', { class: 'grow' }, feed))));
+          h('div', { class: 'row' }, h('span', { class: 'sub' }, '<'), stepper(below, 0, 50), h('span', { class: 'sub' }, 'jml'), stepper(qty, 1, 6), h('div', { class: 'grow' }, feed))));
       }
       out.push(h('div', { class: 'row', style: 'position:sticky;bottom:0;padding:6px 0;background:var(--cream,#fff3d6)' },
         h('button', { class: 'btn grow', onClick: () => {
@@ -410,7 +416,7 @@ P.openInvestasi = function openInvestasi() {
       out.push(h('div', { class: 'card' },
         h('div', { class: 'card-top' }, h('b', {}, `Deposito ${rp(d.principal)}`), h('span', { class: 'price good' }, `+${rp(d.interest)}`)),
         h('div', { class: 'sub' }, `Cair akhir hari ke-${d.matureDay} (${Math.max(0, left)} hari lagi)`),
-        h('button', { class: 'btn secondary small', disabled: s.phase === 'open', onClick: () => { if (confirm('Cairkan sekarang tanpa bunga?')) this.act(() => e.withdrawDeposit(d.id), 'Dicairkan tanpa bunga'); } }, 'Cairkan lebih awal')));
+        h('button', { class: 'btn secondary small', disabled: s.phase === 'open', onClick: () => this.ask('Cairkan sekarang tanpa bunga?', () => this.act(() => e.withdrawDeposit(d.id), 'Dicairkan tanpa bunga'), { yes: 'Cairkan' }) }, 'Cairkan lebih awal')));
     }
 
     // Saham
@@ -442,7 +448,7 @@ P.openInvestasi = function openInvestasi() {
         h('div', { class: 'sub' }, `Harga ${rp(p.cost)} · sewa ${rp(p.income)}/hari · balik modal ±${Math.ceil(p.cost / p.income)} hari · jual ${rp(Math.floor(p.cost * PROPERTY_SELL_RATE))}`),
         h('div', { class: 'row' },
           h('button', { class: 'btn small grow', disabled: n >= p.max || s.ledger.balance < p.cost || s.phase === 'open', onClick: () => this.act(() => e.buyProperty(p.id), `${p.name} dibeli`) }, n >= p.max ? 'Maksimum' : `Beli ${rp(p.cost)}`),
-          h('button', { class: 'btn secondary small', disabled: n < 1 || s.phase === 'open', onClick: () => { if (confirm(`Jual ${p.name} dengan harga ${Math.round(PROPERTY_SELL_RATE * 100)}%?`)) this.act(() => e.sellProperty(p.id), 'Properti dijual'); } }, 'Jual'))));
+          h('button', { class: 'btn secondary small', disabled: n < 1 || s.phase === 'open', onClick: () => this.ask(`Jual ${p.name} dengan harga ${Math.round(PROPERTY_SELL_RATE * 100)}%?`, () => this.act(() => e.sellProperty(p.id), 'Properti dijual'), { yes: 'Jual', danger: true }) }, 'Jual'))));
     }
     return out;
   });

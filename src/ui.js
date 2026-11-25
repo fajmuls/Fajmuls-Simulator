@@ -108,6 +108,7 @@ export class UI {
     this.modal = null;
     this.speed = 1;
     this.tabs = {};
+    this.initBack();
     this.buildHud();
     this.buildFloat();
     this.buildDock();
@@ -212,13 +213,13 @@ export class UI {
   // ---------- Tutorial ----------
   tutorialSteps() {
     return [
-      { mid: true, title: 'Selamat datang di Pasar Satwa!', text: 'Ini kebunmu. Geser ke kiri-kanan untuk melihat Kolam dan Kandang. Ketuk lahan untuk langsung menanam atau panen. Semua dilayani langsung olehmu, tidak ada yang otomatis.' },
+      { mid: true, title: 'Selamat datang di Pasar Satwa!', text: 'Dunia ini satu peta besar: Pasar di kiri, Kebun di tengah, Pet di kanan, Toko di atas. Geser layar untuk melihat sekeliling, ketuk tempat untuk berjalan ke sana.' },
       { el: () => this.tabs.pasar, title: '1. Belanja di Pasar', text: 'Beli bibit atau anak hewan dan pakan. Pakan mahal membuat hewan lebih besar dan lebih mungkin langka.' },
-      { el: () => this.tabs.kebun, title: '2. Tanam di Kebun', text: 'Di layar Kebun, ketuk lahan kosong, pilih bibit, jumlah, dan pakan, lalu tunggu tumbuh. Satu lahan bisa diisi banyak sekaligus. Saat tanda seru muncul, ketuk lahan itu untuk panen.' },
+      { el: () => this.tabs.kebun, title: '2. Tanam di Kebun', text: 'Ketuk lahan kosong, pilih bibit, jumlah, dan pakan, lalu tunggu tumbuh. Saat tanda seru muncul, ketuk lahan itu untuk panen. Hewan disimpan di gudang; bila penuh, panen tertahan.' },
       { el: () => this.tabs.pet, title: '3. Pet', text: 'Tetaskan telur untuk mendapat pet. Pet yang dipasang menemanimu di toko dan memberi buff.' },
       { el: () => this.goBtn, title: '4. Buka toko dan layani', text: 'Pelanggan antre membawa pesanan di atas kepala. Ketuk rak untuk mengambil hewan yang tepat, lalu ketuk pelanggan untuk menyerahkan. Cepat melayani berarti tip.' },
-      { el: () => this.fStory, title: '5. Cerita dan misi', text: 'Ketuk tombol ini atau Pak Pasar di Kebun untuk melanjutkan cerita. Misi harian memberi hadiah tambahan.' },
-      { el: () => this.tabs.menu, title: '6. Menu', text: 'Koleksi, Skill, Upgrade, Karyawan, Bank, Laporan, dan Pengaturan ada di sini.' },
+      { el: () => this.tabs.menu, title: '5. Menu', text: 'Karyawan (bisa memanen dan melayani otomatis), Skill dan Perk, Aturan Jual (jual murah per kelangkaan), Upgrade, Bank, dan Pengaturan ada di sini.' },
+      { el: () => this.fStory, title: '6. Cerita dan misi', text: 'Ketuk tombol ini atau Pak Pasar untuk melanjutkan cerita. Misi harian memberi hadiah tambahan. Tombol Back di HP menutup panel; game tersimpan otomatis.' },
     ];
   }
 
@@ -401,7 +402,8 @@ export class UI {
 
   // ---------- Panel dasar: tinggi tetap, isi dipecah ke halaman, tanpa scroll ----------
   openSheet(title, render) {
-    this.closeModal();
+    this._close();
+    if (!this._pushed) { try { history.pushState({ sheet: 1 }, ''); this._pushed = true; } catch { /* abaikan */ } }
     const body = h('div', { class: 'sheet-body' });
     const pager = h('div', { class: 'pager', style: 'display:none' });
     const sheet = h('div', { class: 'sheet' },
@@ -426,7 +428,46 @@ export class UI {
 
   gotoPage() {}
 
+  // Tombol Back Android: tutup dialog/panel dulu; di layar utama perlu dua kali tekan untuk keluar.
+  initBack() {
+    try { history.replaceState({ root: 1 }, ''); history.pushState({ base: 1 }, ''); } catch { return; }
+    this._ignore = 0;
+    window.addEventListener('popstate', () => {
+      if (this._ignore > 0) { this._ignore -= 1; return; }
+      if (this.askNode) { this.closeAsk(); history.pushState({ sheet: 1 }, ''); return; }
+      if (this.modal) { this._pushed = false; this._close(); return; }
+      if (this._exitArmed) { this._ignore += 1; history.back(); return; }
+      this._exitArmed = true;
+      history.pushState({ base: 1 }, '');
+      toast('Tekan Back sekali lagi untuk keluar');
+      setTimeout(() => { this._exitArmed = false; }, 2200);
+    });
+  }
+
+  // Konfirmasi dalam game (pengganti confirm bawaan browser yang kecil dan jelek di HP).
+  ask(message, onYes, opts = {}) {
+    this.closeAsk();
+    const yes = h('button', { class: `btn grow${opts.danger ? ' danger' : ''}`, onClick: () => { this.closeAsk(); onYes(); } }, opts.yes || 'Ya');
+    const no = h('button', { class: 'btn secondary grow', onClick: () => this.closeAsk() }, opts.no || 'Batal');
+    this.askNode = h('div', { class: 'overlay ask', onClick: (ev) => { if (ev.target === this.askNode) this.closeAsk(); } },
+      h('div', { class: 'askbox' }, h('b', {}, opts.title || 'Yakin?'), h('div', { class: 'sub' }, message), h('div', { class: 'row' }, no, yes)));
+    document.getElementById('modal-root').append(this.askNode);
+  }
+
+  closeAsk() { this.askNode?.remove(); this.askNode = null; }
+
   closeModal() {
+    this._close();
+    if (this._pushed && !this._backTimer) {
+      this._backTimer = setTimeout(() => {
+        this._backTimer = null;
+        if (!this.modal && this._pushed) { this._pushed = false; this._ignore = (this._ignore || 0) + 1; try { history.back(); } catch { /* abaikan */ } }
+      }, 0);
+    }
+  }
+
+  _close() {
+    this.closeAsk();
     clearInterval(this.modalTimer);
     this.modalTimer = null;
     if (this.pickerOpen) { this.pickerOpen = false; this.ctx.scene()?.setPaused(false); }
@@ -654,7 +695,7 @@ export class UI {
           } }, 'Jalankan audit')),
         h('div', { class: 'card' }, h('b', {}, 'Game baru'),
           h('button', { class: 'btn danger', disabled: e.state.phase === 'open', onClick: () => {
-            if (confirm('Hapus progres dan mulai game baru? Ini tidak bisa dibatalkan.')) { this.ctx.newGame(); this.closeModal(); }
+            this.ask('Hapus progres dan mulai game baru? Ini tidak bisa dibatalkan.', () => { this.ctx.newGame(); this.closeModal(); }, { yes: 'Hapus semua', danger: true });
           } }, 'Mulai game baru')),
         h('div', { class: 'sub', style: 'text-align:center' }, `Pasar Satwa · v10 · 1 hari = ${DAY_LENGTH_SEC}s pada 1x`),
       ];

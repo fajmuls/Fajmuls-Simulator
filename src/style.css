@@ -49,7 +49,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #game canvas { display: block; touch-action: none; }
 #float { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
 .fcol { position: absolute; left: 6px; top: 6px; display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
-.fcol .fchip { min-height: 26px; padding: 2px 8px 2px 5px; font-size: 11.5px; opacity: .93; }
+.fcol .fchip { min-height: 40px; padding: 2px 8px 2px 5px; font-size: 11.5px; opacity: .93; }
 .fzoom { position: absolute; right: 8px; top: 8px; display: grid; gap: 6px; }
 #float button { pointer-events: auto; }
 .fchip { display: inline-flex; align-items: center; gap: 5px; background: var(--panel); border: 2.5px solid var(--line); border-radius: 999px; padding: 3px 11px 3px 6px; font-size: 12.5px; font-weight: 800; box-shadow: var(--shadow); min-height: 30px; }
@@ -239,3 +239,20 @@ html.contrast { --bg: #fff; --panel: #fff; --panel-2: #f1e7d1; --muted: #2b1d12;
 .pips { display: inline-flex; gap: 4px; }
 .pips i { width: 14px; height: 14px; border-radius: 50%; border: 2.5px solid var(--line); background: #fff; display: inline-block; }
 .pips i.on { background: var(--accent, #f59e0b); }
+
+/* v12: dialog konfirmasi, target sentuh 44px */
+.overlay.ask { align-items: center; z-index: 5; background: #3b2a1ccc; padding: 18px; }
+.askbox { background: var(--panel); border: 3px solid var(--line); border-radius: 18px; padding: 16px; width: 100%; max-width: 340px; display: grid; gap: 10px; box-shadow: var(--shadow); animation: up 0.15s ease-out; }
+.askbox b { font-size: 17px; }
+.askbox .row { flex-wrap: nowrap; gap: 8px; }
+.askbox .btn { min-height: 46px; }
+.chip, .tabs-row .chip { min-height: 44px; display: inline-flex; align-items: center; }
+.btn.small { min-height: 44px; }
+.x { width: 44px; height: 44px; }
+input[type=range] { height: 44px; }
+label:has(input[type=checkbox]) { min-height: 44px; display: flex; align-items: center; gap: 8px; }
+input[type=checkbox] { width: 24px; height: 24px; }
+.stepper { display: inline-flex; align-items: center; gap: 4px; }
+.stepper input { width: 46px !important; text-align: center; min-height: 44px; }
+.step { width: 44px; height: 44px; border-radius: 12px; border: 2.5px solid var(--line); background: var(--panel-3); font-size: 22px; font-weight: 900; padding: 0; box-shadow: 0 2px 0 var(--line); }
+.step:active { transform: translateY(2px); box-shadow: none; }

@@ -39,3 +39,5 @@ npm run build    # build produksi (dist/)
 - v11-B (state v11): skill dirombak. Skill tree (15 simpul, maks 3 rank, tingkat 1-4, biaya poin naik tiap rank dan tingkat), Perk terpisah (20 perk berjenjang yang butuh level atribut), 4 atribut (Dagang, Karisma, Ketangkasan, Hoki) dengan poin dari bintang, level toko, dan bab cerita. Simpanan lama dimigrasi: rank direset, poin kembali penuh, slot karyawan dipertahankan. Kandang pet bisa diperluas lewat skill Rumah Pet Luas.
 - v11-C: peta dirapikan: pagar digambar ulang tanpa tumpang tindih, halaman Pasar dan Pet tidak lagi menabrak jalan, jalan terlihat masuk halaman, alun-alun dan air mancur tidak menyentuh pagar, pohon/semak/batu diberi jarak dan dijauhkan dari bangunan, jajaran semak bawah menggantikan deretan pohon yang menutupi toko, lahan kolam digeser dari chip HUD.
 - PWA: bisa di-install dan jalan offline (siap PWA Builder)
+
+- v12 Tahap 1: gudang hewan naik bertahap (+40 level toko, +30 Rak, +10 perk Gudang Rapi, maks 440), tombol Back Android, simpan otomatis saat app ditutup, dialog konfirmasi dalam game, tombol 44px, stepper −/+, tutorial baru.

@@ -2,7 +2,8 @@ import Phaser from 'phaser';
 import { registerSW } from 'virtual:pwa-register';
 import './style.css';
 import { GameEngine, newState } from './core/engine.js';
-import { SaveManager, serialize, deserialize } from './core/save.js';
+import { SaveManager, serialize, deserialize, validateState } from './core/save.js';
+import { auditLedger, credit } from './core/ledger.js';
 import { WorldScene } from './game/WorldScene.js';
 import { UI, toast, h, getA11y } from './ui.js';
 import './screens.js';
@@ -92,7 +93,8 @@ async function boot() {
   const firstTouch = () => { audio.unlock(); };
   window.addEventListener('pointerdown', firstTouch, { once: true });
   document.addEventListener('click', (ev) => { if (ev.target.closest?.('button, .chip, .tile') && !ev.target.closest('.qbtn')) audio.play('click'); });
-  document.addEventListener('visibilitychange', () => audio.suspend(document.hidden));
+  document.addEventListener('visibilitychange', () => { audio.suspend(document.hidden); if (document.hidden) persist(); });
+  window.addEventListener('pagehide', () => persist());
 
   const world = new WorldScene(engine, {
     onProgress: (v) => setProgress(v),
@@ -149,7 +151,7 @@ async function boot() {
   if (restored?.slot === 'backup') toast('Simpanan utama rusak, memuat cadangan', 'err');
 
   if (new URLSearchParams(location.search).has('debug')) {
-    window.fajmuls = { engine, ui, game, saves };
+    window.fajmuls = { engine, ui, game, saves, credit: (n) => credit(engine.state.ledger, engine.state.day, 'reward', n, 'debug'), check: () => ({ problems: validateState(engine.state), ledger: auditLedger(engine.state.ledger), nan: /null|NaN|Infinity/.test(JSON.stringify(engine.state, (_k, v) => (typeof v === 'number' && !Number.isFinite(v) ? 'NaN!' : v))) && JSON.stringify(engine.state, (_k, v) => (typeof v === 'number' && !Number.isFinite(v) ? 'NaN!' : v)).includes('NaN!') }) };
   }
 
   const updateSW = registerSW({

@@ -87,7 +87,7 @@ export const SHOP_LEVELS = [
 // ---------- Upgrade toko ----------
 const premium = (cat, name, c1, c2) => ({ id: `prem_${cat}`, name, desc: `Pembeli rela bayar +6% per level untuk kategori ${CATEGORIES.find((x) => x.id === cat).name}.`, costs: [c1, c2], needCat: cat });
 export const UPGRADES = [
-  { id: 'rak', name: 'Rak Lebih Besar', desc: 'Tambah kapasitas stok (+40 unit per level).', costs: [15000, 40000, 90000, 200000, 450000, 900000] },
+  { id: 'rak', name: 'Rak Lebih Besar', desc: 'Tambah kapasitas gudang hewan (+30 per level).', costs: [15000, 40000, 90000, 200000, 450000, 900000] },
   { id: 'dekorasi', name: 'Dekorasi Toko', desc: 'Toko lebih menarik: pelanggan +12% per level.', costs: [20000, 55000, 120000, 260000] },
   { id: 'supplier', name: 'Kontrak Supplier', desc: 'Buka kualitas barang lebih tinggi di grosir (+1 kualitas per level).', costs: [30000, 100000] },
   { id: 'kasir_modern', name: 'Mesin Kasir Modern', desc: 'Pembayaran 15% lebih cepat per level.', costs: [12000, 35000, 80000] },
@@ -165,7 +165,7 @@ export const PERKS = [
   { id: 'vipmagnet', attr: 'karisma', need: 4, name: 'Magnet VIP', max: 8, desc: 'Pelanggan VIP 15% lebih sering per rank.' },
   { id: 'sabar', attr: 'karisma', need: 2, name: 'Suasana Nyaman', max: 5, desc: 'Pelanggan 8% lebih sabar menunggu per rank.' },
   { id: 'tip_besar', attr: 'karisma', need: 2, name: 'Senyum Bertip', max: 5, desc: 'Tip pelayanan cepat +8% per rank.' },
-  { id: 'gudang', attr: 'tangkas', need: 1, name: 'Gudang Rapi', max: 8, desc: 'Kapasitas gudang hewan +8 per rank.' },
+  { id: 'gudang', attr: 'tangkas', need: 1, name: 'Gudang Rapi', max: 8, desc: 'Kapasitas gudang hewan +10 per rank.' },
   { id: 'kasir_cepat', attr: 'tangkas', need: 2, name: 'Kasir Gesit', max: 5, desc: 'Pembayaran 12% lebih cepat per rank.' },
   { id: 'langkah', attr: 'tangkas', need: 1, name: 'Langkah Cepat', max: 10, desc: 'Karakter berjalan 10% lebih cepat per rank.' },
   { id: 'sigap', attr: 'tangkas', need: 3, name: 'Tangan Sigap', max: 5, desc: 'Tip cepat masih didapat walau pelanggan menunggu lebih lama (+8% per rank).' },

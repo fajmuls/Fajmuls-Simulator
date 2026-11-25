@@ -289,7 +289,7 @@ P.openKoleksi = function openKoleksi() {
           h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px' }, svgEl(animalSVG(it), 40),
             h('div', { class: 'grow' }, h('b', {}, it.name), h('div', { class: 'sub' }, `${sizeLabel(a.itemId, a.size)} · `, rarTag(r))),
             h('div', { style: 'text-align:right' }, h('div', { class: 'price' }, rp(animalValue(a))),
-              h('button', { class: 'btn small secondary', onClick: () => { if (rarityIdx(a.rarity) >= 3 && !confirm(`${r.name} ${it.name} cukup langka. Tetap jual ke pengepul?`)) return; this.act(() => e.dealerSell(a.id), (p) => `Terjual ke pengepul ${rp(p)}`, 'coin'); } }, 'Jual murah')))));
+              h('button', { class: 'btn small secondary', onClick: () => { const go = () => this.act(() => e.dealerSell(a.id), (p) => `Terjual ke pengepul ${rp(p)}`, 'coin'); if (rarityIdx(a.rarity) >= 3) this.ask(`${r.name} ${it.name} cukup langka. Tetap jual ke pengepul?`, go, { yes: 'Jual', danger: true }); else go(); } }, 'Jual murah')))));
       }
       if (sorted.length > 80) out.push(h('div', { class: 'sub' }, `+${sorted.length - 80} hewan lainnya`));
     } else {
@@ -389,7 +389,7 @@ P.openPet = function openPet() {
     const spare = pets.owned.filter((p) => !pets.equipped.includes(p.id) && rarityIdx(p.rarity) <= 1);
     if (spare.length) {
       const val = spare.reduce((n, p) => n + farmPetValue(p), 0);
-      out.push(h('button', { class: 'btn secondary small', onClick: () => { if (confirm(`Jual ${spare.length} pet Common/Uncommon yang tidak dipasang?`)) this.act(() => e.sellSparePets(1), (v) => `${v.n} pet terjual ${rp(v.total)}`, 'coin'); } }, `Jual ${spare.length} pet biasa · ${rp(val)}`));
+      out.push(h('button', { class: 'btn secondary small', onClick: () => this.ask(`Jual ${spare.length} pet Common/Uncommon yang tidak dipasang?`, () => this.act(() => e.sellSparePets(1), (v) => `${v.n} pet terjual ${rp(v.total)}`, 'coin'), { yes: 'Jual' }) }, `Jual ${spare.length} pet biasa · ${rp(val)}`));
     }
     const sorted = pets.owned.slice().sort((a, b) => Number(pets.equipped.includes(b.id)) - Number(pets.equipped.includes(a.id)) || rarityIdx(b.rarity) - rarityIdx(a.rarity));
     for (const p of sorted) {
@@ -400,7 +400,7 @@ P.openPet = function openPet() {
           h('div', { class: 'grow' }, h('b', {}, getPetKind(p.kind).name), h('div', {}, rarTag(r), on ? h('span', { class: 'badge good', style: 'margin-left:6px' }, 'dipasang') : null), h('div', { class: 'sub' }, getPetKind(p.kind).text(petBuffValue(p))))),
         h('div', { class: 'row' },
           h('button', { class: `btn small ${on ? 'secondary' : ''}`, onClick: () => this.act(() => (on ? e.unequipPet(p.id) : e.equipPet(p.id)), on ? 'Pet disimpan di inventori' : 'Pet dipasang', 'ok') }, on ? 'Lepas dari slot' : 'Pasang'),
-          h('button', { class: 'btn small secondary', onClick: () => { if (rarityIdx(p.rarity) >= e.state.policy.petConfirm && !confirm('Pet ini langka. Yakin dijual? (tetap tercatat di Buku Koleksi)')) return; this.act(() => e.sellPet(p.id), (v) => `Pet terjual ${rp(v)}`, 'coin'); } }, `Jual ${rp(farmPetValue(p))}`))));
+          h('button', { class: 'btn small secondary', onClick: () => { const go = () => this.act(() => e.sellPet(p.id), (v) => `Pet terjual ${rp(v)}`, 'coin'); if (rarityIdx(p.rarity) >= e.state.policy.petConfirm) this.ask('Pet ini langka. Yakin dijual? (tetap tercatat di Buku Koleksi)', go, { yes: 'Jual', danger: true }); else go(); } }, `Jual ${rp(farmPetValue(p))}`))));
     }
     return out;
   });
