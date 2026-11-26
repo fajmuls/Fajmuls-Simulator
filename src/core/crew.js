@@ -173,7 +173,8 @@ export function keeperPlan(e, busy = new Set()) {
       buy = qty - owned;
       if (e.state.ledger.balance - reserve < farm.bibitPrice(e, itemId) * buy) continue;
     }
-    const feed = rule.feed && (fm.feeds[rule.feed] || 0) >= qty && farm.feedOpen(e, farm.getFeed(rule.feed)) ? rule.feed : null;
+    // Pakan khusus hanya dipakai di jenis tempatnya; selain itu penjaga menanam tanpa pakan.
+    const feed = rule.feed && (fm.feeds[rule.feed] || 0) >= qty && farm.feedOpen(e, farm.getFeed(rule.feed)) && farm.feedFits(farm.getFeed(rule.feed), hab) ? rule.feed : null;
     const deficit = rule.below - have;
     if (!best || deficit > best.deficit) best = { type: 'tanam', slot, itemId, qty, feed, buy, deficit };
   }
@@ -186,4 +187,3 @@ export function keeperPerform(e, plan) {
   farm.plant(e, plan.slot, plan.itemId, plan.feed, plan.qty);
   return { type: 'tanam', itemId: plan.itemId, qty: plan.qty };
 }
-
