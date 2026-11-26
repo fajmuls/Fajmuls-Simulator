@@ -17,12 +17,17 @@ export const RARITIES = [
 export const rarityIdx = (id) => RARITIES.findIndex((r) => r.id === id);
 
 // luck menggeser bobot ke rarity yang lebih tinggi; size = dorongan ukuran; speed = percepatan tumbuh
+// hab (opsional) = pakan khusus yang hanya cocok untuk satu jenis tempat.
 export const FEEDS = [
   { id: 'dedak', name: 'Pakan Dasar', price: 60, luck: 0.5, size: 0.1, speed: 0.05, color: '#a16207', needShop: 1 },
   { id: 'bagus', name: 'Pakan Bagus', price: 250, luck: 1.3, size: 0.2, speed: 0.1, color: '#16a34a', needShop: 2 },
   { id: 'premium', name: 'Pakan Premium', price: 1000, luck: 2.8, size: 0.35, speed: 0.15, color: '#2563eb', needShop: 3 },
   { id: 'super', name: 'Pakan Super', price: 4500, luck: 5, size: 0.5, speed: 0.22, color: '#9333ea', needShop: 4 },
   { id: 'dewa', name: 'Pakan Dewa', price: 20000, luck: 9, size: 0.7, speed: 0.3, color: '#f59e0b', needShop: 5 },
+  { id: 'plankton', name: 'Plankton Kaya', price: 420, luck: 1.8, size: 0.25, speed: 0.12, color: '#0ea5e9', needShop: 2, hab: 'kolam' },
+  { id: 'sayur', name: 'Sayur Segar', price: 420, luck: 1.8, size: 0.25, speed: 0.12, color: '#22c55e', needShop: 2, hab: 'kecil' },
+  { id: 'biji', name: 'Biji Pilihan', price: 420, luck: 1.8, size: 0.25, speed: 0.12, color: '#ca8a04', needShop: 2, hab: 'burung' },
+  { id: 'serangga', name: 'Serangga Hidup', price: 420, luck: 1.8, size: 0.25, speed: 0.12, color: '#65a30d', needShop: 2, hab: 'reptil' },
 ];
 // Pakan dibuka bertahap menurut level toko, jadi pakan murah tetap terpakai di awal.
 export const feedOpen = (e, f) => (e.state.shopLevel || 1) >= f.needShop;
@@ -31,28 +36,86 @@ export const getFeed = (id) => {
   if (!f) throw new Error('Pakan tidak dikenal');
   return f;
 };
+// Pakan umum cocok di mana saja; pakan khusus hanya di jenis tempatnya.
+export const feedFits = (f, habId) => !f.hab || f.hab === habId;
 
 // detik tumbuh per tier (pada tanpa pakan)
 export const GROW_SEC = [45, 70, 100, 140, 200];
 export const BIBIT_RATE = 0.55; // harga bibit = 55% harga jual dasar
-export const SLOT_COSTS = [0, 0, 0, 6000, 15000, 38000, 90000, 210000, 450000, 750000, 1200000];
+// Harga lahan ke-n (n = jumlah lahan saat membeli). Total 10 lahan: 5 jenis tempat x 2.
+export const SLOT_COSTS = [0, 0, 0, 6000, 15000, 38000, 90000, 210000, 450000, 750000];
 export const MAX_SLOTS = SLOT_COSTS.length;
 export const START_SLOTS = 3;
 
 // Habitat: tiap lahan (slot) berada di satu tempat di peta dan hanya cocok untuk kategori tertentu.
+// zone = tampilan dan area di peta (kolam | kebun | kandang). Tiap jenis maksimal 2 tempat.
 export const HABITATS = [
-  { id: 'kolam', name: 'Kolam Ikan', one: 'Kolam', cats: ['ikan'], max: 4, cap: 8 },
-  { id: 'kebun', name: 'Kebun Umpan', one: 'Petak', cats: ['perlengkapan'], max: 2, cap: 8 },
-  { id: 'kandang', name: 'Kandang Satwa', one: 'Kandang', cats: ['burung', 'reptil', 'kecil'], max: 5, cap: 5 },
+  { id: 'kolam', name: 'Kolam Ikan', one: 'Kolam', cats: ['ikan'], max: 2, cap: 8, zone: 'kolam' },
+  { id: 'kebun', name: 'Kebun Umpan', one: 'Petak', cats: ['perlengkapan'], max: 2, cap: 8, zone: 'kebun' },
+  { id: 'kecil', name: 'Kandang Hewan Kecil', one: 'Kandang', cats: ['kecil'], max: 2, cap: 8, zone: 'kandang' },
+  { id: 'burung', name: 'Kandang Burung', one: 'Sangkar', cats: ['burung'], max: 2, cap: 8, zone: 'kandang' },
+  { id: 'reptil', name: 'Kandang Reptil', one: 'Terarium', cats: ['reptil'], max: 2, cap: 8, zone: 'kandang' },
 ];
 export const START_HABS = ['kebun', 'kolam', 'kolam'];
-// Tiap lahan punya level: makin tinggi makin banyak ekor yang muat (dalam beberapa penghuni berbeda).
-export const HAB_LEVEL_CAPS = [2, 4, 6];
-export const SPOT_UPGRADE_COSTS = { kolam: [10000, 40000], kebun: [6000, 25000], kandang: [15000, 55000] };
+// Tiap lahan punya level 1 sampai 15: makin tinggi makin banyak ekor yang muat (Lv 15 = 30 ekor).
+export const HAB_LEVEL_CAPS = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30];
+const UPGRADE_BASE = [10000, 40000, 80000, 150000, 280000, 500000, 850000, 1400000, 2300000, 3700000, 5800000, 9000000, 14000000, 21000000];
+const UPGRADE_FACTOR = { kolam: 1, kebun: 0.6, kecil: 1.4, burung: 1.4, reptil: 1.4 };
+const upgradeCosts = (f) => UPGRADE_BASE.map((c) => Math.round((c * f) / 100) * 100);
+export const SPOT_UPGRADE_COSTS = Object.fromEntries(Object.entries(UPGRADE_FACTOR).map(([k, f]) => [k, upgradeCosts(f)]));
 export const MAX_SPOT_LEVEL = HAB_LEVEL_CAPS.length;
 export const getHabitat = (id) => HABITATS.find((h) => h.id === id);
+export const habZone = (id) => (getHabitat(id) || {}).zone || 'kandang';
 export const habitatOf = (itemId) => HABITATS.find((h) => h.cats.includes(getItem(itemId).cat));
 export const slotsOfHab = (e, hab) => farmOf(e).habs.map((h, i) => (h === hab ? i : -1)).filter((i) => i >= 0);
+
+// ---------- Migrasi ke v13: 5 jenis tempat, masing-masing maksimal 2 ----------
+// Data lama: kandang (max 5) berisi burung/reptil/hewan kecil; kolam bisa sampai 4.
+const OLD_SLOT_COSTS = [0, 0, 0, 6000, 15000, 38000, 90000, 210000, 450000, 750000, 1200000];
+const OLD_UPGRADES = { kolam: [10000, 40000], kebun: [6000, 25000], kandang: [15000, 55000] };
+const KANDANG_TYPES = ['kecil', 'burung', 'reptil'];
+
+export function migrateFarmV13(state) {
+  const fm = state.farm;
+  if (!fm || fm.habsV13) return { refund: 0, removed: 0 };
+  const habs = []; const slots = []; const levels = [];
+  const counts = {};
+  let refund = 0; let removed = 0;
+  fm.habs.forEach((oldHab, i) => {
+    const lots = fm.slots[i] || [];
+    const lv = fm.levels[i] || 1;
+    let h = oldHab;
+    if (oldHab === 'kandang') {
+      const votes = {};
+      for (const l of lots) {
+        let cat = null;
+        try { cat = getItem(l.itemId).cat; } catch (err) { cat = null; }
+        if (KANDANG_TYPES.includes(cat)) votes[cat] = (votes[cat] || 0) + (l.qty || 1);
+      }
+      const prefer = Object.keys(votes).sort((a, b) => votes[b] - votes[a]);
+      h = [...prefer, ...KANDANG_TYPES].find((t) => (counts[t] || 0) < 2) || null;
+    }
+    if (!h || (counts[h] || 0) >= 2) {
+      // Lahan berlebih dihapus: uang pembelian dan upgrade dikembalikan, isinya jadi bibit/pakan.
+      let paid = OLD_SLOT_COSTS[i] || 0;
+      for (let k = 0; k < lv - 1; k++) paid += (OLD_UPGRADES[oldHab] || [])[k] || 0;
+      refund += paid;
+      removed += 1;
+      for (const l of lots) {
+        const q = l.qty || 1;
+        fm.bibit[l.itemId] = (fm.bibit[l.itemId] || 0) + q;
+        if (l.feed) fm.feeds[l.feed] = (fm.feeds[l.feed] || 0) + q;
+      }
+      return;
+    }
+    counts[h] = (counts[h] || 0) + 1;
+    habs.push(h); slots.push(lots); levels.push(Math.min(lv, MAX_SPOT_LEVEL));
+  });
+  fm.habs = habs; fm.slots = slots; fm.levels = levels;
+  fm.habsV13 = true;
+  if (refund > 0) credit(state.ledger, state.day, 'reward', refund, 'Pengembalian lahan lama (tiap jenis 2 tempat)');
+  return { refund, removed };
+}
 
 // ukuran dasar (cm untuk ikan/burung/reptil, gram untuk satwa kecil dan umpan)
 const SIZE_BASE = {
@@ -268,7 +331,8 @@ export function plant(e, slot, itemId, feedId = null, qty = 1) {
   if (spotFree(e, slot) === 0) throw new Error('Lahan penuh, upgrade atau panen dulu');
   if (qty > spotFree(e, slot)) throw new Error(`Sisa tempat ${spotFree(e, slot)} ekor`);
   if (feedId) {
-    getFeed(feedId);
+    const f = getFeed(feedId);
+    if (!feedFits(f, fm.habs[slot])) throw new Error(`${f.name} tidak cocok di ${getHabitat(fm.habs[slot]).name}`);
     if ((fm.feeds[feedId] || 0) < qty) throw new Error('Pakan kurang, beli di Pasar');
   }
   if ((fm.bibit[itemId] || 0) < qty) throw new Error('Bibit kurang, beli di Pasar');
@@ -440,7 +504,7 @@ export const newFarm = () => ({
   slots: Array.from({ length: START_SLOTS }, () => []),
   habs: [...START_HABS],
   levels: Array.from({ length: START_SLOTS }, () => 1),
-  animals: [], feeds: {}, bibit: {}, nextAnimal: 1, rolls: 0, book: {},
+  animals: [], feeds: {}, bibit: {}, nextAnimal: 1, rolls: 0, book: {}, habsV13: true,
 });
 export const newPets = () => ({ owned: [], equipped: [], nextId: 1, rolls: 0, book: {}, extra: 0 });
 
