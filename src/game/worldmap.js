@@ -19,12 +19,17 @@ export const YARDS = { pasar: { x: 56, y: 552, w: 316, h: 290 }, pet: { x: 1030,
 
 export const GATES = { kolam: { x: 330, w: 60 }, kandang: { x: 1090, w: 60 } }; // celah di dinding bawah (y=430)
 
+// Tiap jenis tempat punya 2 lahan. Kunci = id habitat (lihat HABITATS di core/farm.js).
 export const PLOTS = {
-  kolam: [[172, 140], [340, 140], [172, 300], [340, 300]],
+  kolam: [[172, 220], [340, 220]],
   kebun: [[480, 150], [480, 290]],
-  kandang: [[930, 160], [1090, 160], [1250, 160], [1010, 315], [1170, 315]],
+  kecil: [[930, 160], [930, 315]],
+  burung: [[1090, 160], [1090, 315]],
+  reptil: [[1250, 160], [1250, 315]],
 };
-export const PLOT_SIZE = { kolam: [140, 100], kebun: [116, 80], kandang: [104, 110] };
+export const PLOT_SIZE = {
+  kolam: [140, 100], kebun: [116, 80], kecil: [104, 110], burung: [104, 110], reptil: [104, 110],
+};
 export const plotFront = (hab, x, y) => ({ x, y: y + PLOT_SIZE[hab][1] / 2 + 22 });
 
 export const RACK_Y = 795;
