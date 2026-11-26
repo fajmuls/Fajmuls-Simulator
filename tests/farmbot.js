@@ -16,7 +16,7 @@ export function farmRound(e, clock, { feedUp = true, expand = true } = {}) {
   const s = e.state;
   // kembangkan usaha
   if (expand) {
-    if (s.ledger.balance > 60000 && s.farm.slots.length < 6) attempt(() => e.buySlot(s.farm.slots.length % 2 ? 'kolam' : 'kandang'));
+    if (s.ledger.balance > 60000 && s.farm.slots.length < 6) attempt(() => e.buySlot(s.farm.slots.length % 2 ? 'kolam' : 'burung'));
     for (const it of ITEMS) if (it.unlockCost > 0 && s.ledger.balance > it.unlockCost * 1.5 + 5000) attempt(() => e.unlockSpecies(it.id));
     if (s.ledger.balance > 90000) attempt(() => e.expandShop());
   }
@@ -30,7 +30,7 @@ export function farmRound(e, clock, { feedUp = true, expand = true } = {}) {
     const pick = here.slice().sort((a, b) => (have(a.id) / a.demand) - (have(b.id) / b.demand))[0];
     let feed = null;
     if (feedUp) {
-      for (const f of FEEDS.slice().reverse()) {
+      for (const f of FEEDS.filter((x) => !x.hab).reverse()) {
         if (f.price * 6 < pick.retail * 1.2 && s.ledger.balance > f.price * 3 + 4000) { attempt(() => e.buyFeed(f.id, 1)); feed = f.id; break; }
       }
     }
