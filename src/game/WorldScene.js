@@ -462,7 +462,7 @@ export class WorldScene extends Phaser.Scene {
   // Sinkronkan karyawan di peta dengan daftar crew di mesin.
   refreshStaff() {
     const hired = this.engine.state.crew.hired;
-    const live = new Set(hired.map((m) => m.uid));
+    const live = new Set(hired.filter((m) => !m.away).map((m) => m.uid));
     for (const [uid, n] of this.crewNpc) {
       if (live.has(uid)) continue;
       if (n.claim) n.claim.claimed = null;
@@ -471,6 +471,7 @@ export class WorldScene extends Phaser.Scene {
       this.crewNpc.delete(uid);
     }
     for (const m of hired) {
+      if (m.away) continue;
       let n = this.crewNpc.get(m.uid);
       if (!n) {
         if (!this.textures.exists(`staff_${m.type}`)) continue;

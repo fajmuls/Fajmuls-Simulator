@@ -6,7 +6,7 @@ import * as farm from './farm.js';
 
 export const newCrew = () => ({ licenses: {}, hired: [], nextUid: 1, bonusSlots: 0, keeper: { rules: {}, harvest: true, autoBuy: true } });
 
-export const crewSlots = (e) => (e.state.skills.tim || 0) + (e.state.skills.tim_besar || 0) + (e.state.crew.bonusSlots || 0);
+export const crewSlots = (e) => (e.state.skills.tim || 0) + (e.state.skills.tim_besar || 0) + (e.state.crew.bonusSlots || 0) + ((e.state.prestige?.spent?.pslot) || 0);
 export const crewList = (e) => e.state.crew.hired;
 export const crewCount = (e, type) => e.state.crew.hired.filter((m) => m.type === type).length;
 export const levelMul = (m) => 1 + 0.25 * (m.lvl - 1); // kekuatan efek dan kecepatan kerja per level
@@ -64,6 +64,7 @@ export function fire(e, uid) {
   const c = e.state.crew;
   const i = c.hired.findIndex((m) => m.uid === uid);
   if (i < 0) throw new Error('Karyawan tidak ada');
+  if (c.hired[i].away) throw new Error('Karyawan sedang ekspedisi');
   c.hired.splice(i, 1);
 }
 
@@ -87,6 +88,7 @@ export function upgrade(e, uid) {
 export function crewBuff(e, key) {
   let v = 0;
   for (const m of e.state.crew.hired) {
+    if (m.away) continue;
     const def = getStaff(m.type);
     if (def.buff && def.buff.key === key) v += def.buff.per * levelMul(m);
   }
@@ -103,7 +105,7 @@ export function workInterval(e, m) {
 // Peluang total satpam mengusir pencuri (digabung dari semua satpam).
 export function guardChance(e) {
   let miss = 1;
-  for (const m of e.state.crew.hired) if (m.type === 'satpam') miss *= 1 - Math.min(0.95, 0.7 * levelMul(m) * 0.85);
+  for (const m of e.state.crew.hired) if (m.type === 'satpam' && !m.away) miss *= 1 - Math.min(0.95, 0.7 * levelMul(m) * 0.85);
   return 1 - miss;
 }
 

@@ -114,7 +114,7 @@ export const newPolicy = () => ({ sell: {}, obralPct: 0.25, petAuto: {}, petConf
 export const sellMode = (e, rarity) => (e.state.policy && e.state.policy.sell[rarity]) || 'normal';
 
 // Kapasitas gudang hewan: kecil di awal, naik bertahap.
-export const animalCap = (e) => 20 + 40 * ((e.state.shopLevel || 1) - 1) + 30 * (e.state.upgrades.rak || 0) + 10 * (e.state.skills.gudang || 0);
+export const animalCap = (e) => 20 + 40 * ((e.state.shopLevel || 1) - 1) + 30 * (e.state.upgrades.rak || 0) + 10 * (e.state.skills.gudang || 0) + 20 * ((e.state.prestige?.spent?.pgudang) || 0);
 export const stockFull = (e) => farmOf(e).animals.length >= animalCap(e);
 
 // ---------- Matematika murni ----------

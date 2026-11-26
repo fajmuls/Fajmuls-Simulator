@@ -79,7 +79,7 @@ describe('karyawan v9', () => {
     delete old.crew;
     old.staff = { kasir: true, satpam: true };
     const m = migrate(old);
-    expect(m.v).toBe(11);
+    expect(m.v).toBe(12);
     expect(m.staff).toBeUndefined();
     expect(m.crew.hired.map((x) => x.type).sort()).toEqual(['kasir', 'satpam']);
     expect(m.crew.bonusSlots).toBe(2);

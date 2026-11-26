@@ -71,6 +71,12 @@ export function validateState(s) {
     }
     for (const k of Object.keys(cr.licenses)) if (!STAFF.some((x) => x.id === k)) p.push(`Lisensi ${k} tidak dikenal`);
   }
+  const ci = s.cities;
+  if (!ci || typeof ci.at !== 'string' || !ci.owned || !ci.owned[ci.at]) p.push('Data kota rusak');
+  const ex = s.exped;
+  if (!ex || !Array.isArray(ex.active) || ex.active.some((x) => !Number.isInteger(x.backDay) || !s.crew?.hired?.some((m) => m.uid === x.crewUid))) p.push('Data ekspedisi rusak');
+  const pg = s.prestige;
+  if (!pg || !nonNeg(pg.points) || !pg.spent || typeof pg.spent !== 'object') p.push('Data prestise rusak');
   if (!s.species || typeof s.species !== 'object') p.push('Spesies rusak');
   else for (const k of Object.keys(s.species)) if (!ITEMS.some((x) => x.id === k)) p.push(`Spesies ${k} tidak dikenal`);
   if (!s.restock || typeof s.restock !== 'object') p.push('Aturan restok rusak');

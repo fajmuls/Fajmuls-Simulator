@@ -9,6 +9,7 @@ import { UI, toast, h, getA11y } from './ui.js';
 import './screens.js';
 import './farmscreens.js';
 import './storyscreens.js';
+import './worldscreens.js';
 import { audio } from './audio.js';
 
 const loadStart = performance.now();

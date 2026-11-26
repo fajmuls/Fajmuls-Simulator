@@ -12,12 +12,13 @@ import { createLedger, credit, debit, sumByType } from './ledger.js';
 import { mulberry32, hashSeed, pickWeighted } from './rng.js';
 import * as farm from './farm.js';
 import * as crew from './crew.js';
+import * as w2 from './world2.js';
 import * as story from './story.js';
 import { planRegulars, onRegularPaid, maxBondLevel, claimRegular } from './regulars.js';
 import { ensureQuests, trackQuests, claimQuest, checkAchievements, claimAchievement } from './goals.js';
 
 export const DAY_LENGTH_SEC = 90; // lama jendela pelanggan datang pada kecepatan 1x
-export const STATE_VERSION = 11;
+export const STATE_VERSION = 12;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -54,6 +55,9 @@ export function newState(seed = Date.now() % 2147483647) {
     skills: {},
     attrs: { dagang: 0, karisma: 0, tangkas: 0, hoki: 0 },
     policy: farm.newPolicy(),
+    cities: w2.newCities(),
+    exped: w2.newExped(),
+    prestige: w2.newPrestige(),
     potions: {},
     buffs: {},
     crew: crew.newCrew(),
@@ -96,7 +100,8 @@ export function migrate(input) {
   if (input.v === 7) return migrate(migrateV7(input));
   if (input.v === 8) return migrate(migrateV8(input));
   if (input.v === 9) return migrate(migrateV9(input));
-  if (input.v === 10) return migrateV10(input);
+  if (input.v === 10) return migrate(migrateV10(input));
+  if (input.v === 11) return migrateV11(input);
   return input;
 }
 
@@ -136,6 +141,16 @@ function migrateV10(input) {
   if (s.crew) s.crew.bonusSlots = Math.max(s.crew.bonusSlots || 0, slots);
   s.skills = {};
   s.attrs = { dagang: 0, karisma: 0, tangkas: 0, hoki: 0 };
+  return s;
+}
+
+// v11 -> v12: kota/cabang, ekspedisi, prestise.
+function migrateV11(input) {
+  const s = structuredClone(input);
+  s.v = 12;
+  s.cities = w2.newCities();
+  s.exped = w2.newExped();
+  s.prestige = w2.newPrestige();
   return s;
 }
 
@@ -370,17 +385,17 @@ export class GameEngine {
     const sk = (id) => s.skills[id] || 0;
     const up = (id) => s.upgrades[id] || 0;
     const bf = (id) => (s.buffs[id] || 0) > 0;
-    const count = P.count * (1 + 0.12 * up('dekorasi')) * (1 + 0.08 * sk('promosi')) * (1 + 0.01 * this.attrLevel('karisma')) * (1 + 0.05 * sk('setia')) * (1 + 0.06 * sk('iklan')) * (bf('pemikat') ? 1.3 : 1) * (1 + crew.crewBuff(this, 'count')) * (1 + 0.1 * up('renovasi')) * ev.count;
+    const count = P.count * (1 + 0.12 * up('dekorasi')) * (1 + 0.08 * sk('promosi')) * (1 + 0.01 * this.attrLevel('karisma')) * (1 + 0.05 * sk('setia')) * (1 + 0.06 * sk('iklan')) * (bf('pemikat') ? 1.3 : 1) * (1 + crew.crewBuff(this, 'count')) * (1 + 0.1 * up('renovasi')) * ev.count * w2.cityNow(this).count * (1 + 0.03 * w2.pup(this, 'pcust'));
     const disc = Math.min(0.5, P.disc + 0.025 * sk('tawar') + 0.03 * up('member') + (bf('borong') ? 0.12 : 0));
-    const wtp = P.wtp + 0.03 * sk('harga_prima') + (bf('hartawan') ? 0.15 : 0) + ev.wtp;
+    const wtp = P.wtp + 0.03 * sk('harga_prima') + (bf('hartawan') ? 0.15 : 0) + ev.wtp + w2.cityNow(this).wtp;
     const vip = P.vip * (1 + 0.15 * sk('vipmagnet')) * (bf('vip') ? 2 : 1) * ev.vip;
     const rentCut = Math.min(0.6, P.rent + 0.1 * sk('juragan'));
     const rentBase = Math.round(DAILY_RENT * (1 + 0.6 * (s.shopLevel - 1)) * (1 + 0.25 * (s.stars - 1)));
-    const rent = Math.max(0, Math.round(rentBase * (1 - rentCut)));
+    const rent = Math.max(0, Math.round(rentBase * (1 - rentCut))) + w2.cityNow(this).rent;
     const repGain = (1 + 0.12 * sk('ramah') + 0.1 * sk('viral') + (bf('sahabat') ? 0.5 : 0));
     const repLoss = Math.max(0.1, 1 - 0.12 * sk('ramah') - (bf('sahabat') ? 0.5 : 0));
     const payTime = Math.max(0.15, 1 - 0.15 * up('kasir_modern') - 0.12 * sk('kasir_cepat'));
-    const payMul = (1 + 0.05 * sk('lidah_emas') + 0.03 * sk('penjual_ulung') + 0.005 * this.attrLevel('dagang')) * (1 + crew.crewBuff(this, 'price'));
+    const payMul = (1 + 0.05 * sk('lidah_emas') + 0.03 * sk('penjual_ulung') + 0.005 * this.attrLevel('dagang')) * (1 + crew.crewBuff(this, 'price')) * (1 + 0.05 * w2.pup(this, 'pgold'));
     return { count, disc, wtp, vip, rent, repGain, repLoss, payTime, payMul, event: ev };
   }
 
@@ -504,6 +519,19 @@ export class GameEngine {
     debit(this.state.ledger, this.state.day, 'expand', next.cost, `Perluas toko jadi ${next.name}`);
     this.state.shopLevel = next.level;
     return next.cost;
+  }
+
+  // ---------- Kota, ekspedisi, prestise (v12) ----------
+  buyCity(id) { return w2.buyCity(this, id); }
+  travelTo(id) { return w2.travelTo(this, id); }
+  sendExpedition(uid, dest, days) { return w2.sendExpedition(this, uid, dest, days); }
+  buyPup(id) { return w2.buyPup(this, id); }
+  prestigeGain() { return w2.prestigeGain(this); }
+  canPrestige() { return w2.canPrestige(this); }
+  prestigeNow() {
+    const r = w2.prestigeNow(this, newState);
+    this.replaceState(r.state);
+    return r.gain;
   }
 
   upgradeAvailable(id) {
@@ -1031,7 +1059,7 @@ export class GameEngine {
     const m = this.mods();
     const rng = mulberry32(hashSeed(s.seed, 'plan', s.day));
     const n = this.customerCount();
-    const items = this.unlockedItems().map((i) => ({ id: i.id, weight: i.demand * (this.animalCount(i.id) > 0 ? 3 : 1) }));
+    const items = this.unlockedItems().map((i) => ({ id: i.id, weight: i.demand * (this.animalCount(i.id) > 0 ? 3 : 1) * (w2.cityNow(this).cat[i.cat] || 1) }));
     const types = CUSTOMER_TYPES.map((t) => ({ ...t, weight: t.weight * (t.id === 'vip' ? m.vip : 1) }));
     const times = [];
     for (let i = 0; i < n; i++) times.push(rng() * DAY_LENGTH_SEC);
@@ -1350,7 +1378,9 @@ export class GameEngine {
     this._updateSharePrices(day);
     this.track('profit', Math.max(0, summary.net));
     summary.newAchievements = this.checkAchievements();
+    w2.noteCityDay(this, t.revenue);
     s.day += 1;
+    summary.exped = w2.resolveExpeditions(this);
     s.phase = 'idle';
     this.plan = [];
     this.today = null;

@@ -167,6 +167,7 @@ const UI_ICONS = {
   laporan: `<rect x="9" y="5" width="30" height="38" rx="4" fill="#fff" ${st}/><path d="M15 16 H33 M15 24 H33 M15 32 H26" ${st} fill="none"/>`,
   cerita: `<path d="M5 10 Q15 6 24 12 Q33 6 43 10 V38 Q33 34 24 40 Q15 34 5 38 Z" fill="#fff6d1" ${st}/><path d="M24 12 V40" ${st} fill="none"/><path d="M11 18 Q16 16 20 19 M11 25 Q16 23 20 26 M28 19 Q32 16 37 18 M28 26 Q32 23 37 25" fill="none" stroke="${OUT}" stroke-width="1.6"/>`,
   pengaturan: `<circle cx="24" cy="24" r="8" fill="#e5e7eb" ${st}/><path d="M24 4 V10 M24 38 V44 M4 24 H10 M38 24 H44 M10 10 L14 14 M34 34 L38 38 M38 10 L34 14 M10 38 L14 34" ${st} fill="none"/><circle cx="24" cy="24" r="14" fill="none" ${st}/>`,
+  dunia: `<circle cx="24" cy="24" r="18" fill="#38bdf8" ${st}/><path d="M12 16 Q18 10 24 14 Q22 20 16 22 Q10 22 12 16 Z M28 26 Q36 24 38 30 Q34 38 28 36 Z" fill="#4ade80" ${st}/>`,
   peta: `<path d="M5 12 L17 8 L31 12 L43 8 V38 L31 42 L17 38 L5 42 Z" fill="#a7f3d0" ${st}/><path d="M17 8 V38 M31 12 V42" ${st} fill="none"/><circle cx="24" cy="22" r="4" fill="#ef4444" ${st}/>`,
   coin: `<circle cx="24" cy="24" r="18" fill="#fbbf24" ${st}/><circle cx="24" cy="24" r="12" fill="none" stroke="#b45309" stroke-width="2"/><path d="M24 15 V33 M19 19 C19 15 29 15 29 20 C29 25 19 23 19 28 C19 33 29 33 29 29" fill="none" stroke="#b45309" stroke-width="2.2"/>`,
 };

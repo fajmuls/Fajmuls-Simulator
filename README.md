@@ -41,3 +41,4 @@ npm run build    # build produksi (dist/)
 - PWA: bisa di-install dan jalan offline (siap PWA Builder)
 
 - v12 Tahap 1: gudang hewan naik bertahap (+40 level toko, +30 Rak, +10 perk Gudang Rapi, maks 440), tombol Back Android, simpan otomatis saat app ditutup, dialog konfirmasi dalam game, tombol 44px, stepper −/+, tutorial baru.
+- v12 Tahap 2: menu Dunia — cabang kota (Bandung, Surabaya, Bali, Jakarta; dimainkan manual, selera dan sewa berbeda), ekspedisi karyawan 1–3 hari, prestise/musim baru dengan Poin Legenda dan 5 bonus permanen. Save versi 12.

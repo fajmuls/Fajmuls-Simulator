@@ -9,6 +9,7 @@ import { RARITIES, rarityIdx, animalValue, sizeLabel } from './core/farm.js';
 import { animalSVG, uiIconSVG, svgEl } from './art.svg.js';
 import { statIconSVG, EVENT_ICONS } from './art.world.js';
 import { REGULARS } from './core/regulars.js';
+import { getCity } from './core/world2.js';
 
 export const rarOf = (a) => RARITIES[rarityIdx(a.rarity)];
 export const rp = (n) => 'Rp ' + Math.round(n).toLocaleString('id-ID');
@@ -595,6 +596,7 @@ export class UI {
       if (ready) hints.push(`🌱 ${ready} kolam siap dipanen`);
       hints.push(`Hewan di kandang: ${e.state.farm.animals.length}`);
       if (e.skillPointsFree() > 0) hints.push(`🌳 ${e.skillPointsFree()} poin skill belum dipakai`);
+      for (const x of summary.exped || []) hints.push(x.failed ? `🧭 Ekspedisi ${x.name}: gagal, ${x.crew} pulang kosong` : `🧭 Ekspedisi ${x.name} selesai: ${x.animals.length} hewan${x.pet ? ' + pet' : ''}`);
       hints.push(`${e.mods().event.icon} Besok: ${e.mods().event.name}`);
       out.push(h('div', { class: 'card' }, `Kas sekarang: ${rp(summary.endCash)}`, hints.map((t) => h('div', { class: 'sub' }, t))));
       out.push(h('div', { class: 'row' },
@@ -633,6 +635,7 @@ export class UI {
         ['bintang', 'Bintang', starsText(s.stars), () => this.openBintang(), null],
         ['skill', 'Skill', `${e.skillPointsFree()} poin · ${e.attrPointsFree()} atribut`, () => this.openSkill(), e.skillPointsFree() + e.attrPointsFree() > 0 ? e.skillPointsFree() + e.attrPointsFree() : null],
         ['aturan', 'Aturan Jual', `Gudang ${s.farm.animals.length}/${e.animalCap()}`, () => this.openAturan(), null],
+        ['dunia', 'Dunia', `${getCity(s.cities.at).name}${s.exped.active.length ? ` · ${s.exped.active.length} ekspedisi` : ''}`, () => this.openDunia(), null],
         ['upgrade', 'Upgrade', `Toko Lv ${s.shopLevel}`, () => this.openUpgrade(), null],
         ['ramuan', 'Ramuan', s.stars >= 2 ? `${Object.keys(s.buffs).length} aktif` : 'butuh ★2', () => this.openRamuan(), null],
         ['karyawan', 'Karyawan', `${s.crew.hired.length}/${this.e.crewSlots()} slot`, () => this.openKaryawan(), null],
