@@ -3,9 +3,11 @@ import {
   ITEMS, UPGRADES, QUALITIES, SKILL_ALL, POTIONS, STAFF, SHARES, PROPERTIES, SHOP_LEVELS, parseLotKey,
 } from './catalog.js';
 import { STATE_VERSION, migrate } from './engine.js';
+import { HABITATS, HAB_LEVEL_CAPS, MAX_SPOT_LEVEL, migrateFarmV13 } from './farm.js';
 
 const isInt = (v) => Number.isSafeInteger(v);
 const nonNeg = (v) => isInt(v) && v >= 0;
+const MAX_LOT_QTY = HAB_LEVEL_CAPS[HAB_LEVEL_CAPS.length - 1];
 
 // Memeriksa bentuk dan isi data simpanan. Mengembalikan daftar masalah (kosong = valid).
 export function validateState(s) {
@@ -126,11 +128,12 @@ export function validateState(s) {
   if (!f || !Array.isArray(f.slots) || !Array.isArray(f.animals) || !f.feeds || typeof f.feeds !== 'object' || !f.bibit || typeof f.bibit !== 'object' || !nonNeg(f.nextAnimal) || !nonNeg(f.rolls)) p.push('Peternakan rusak');
   else {
     for (const a of f.animals) if (!a || !isInt(a.id) || typeof a.itemId !== 'string' || typeof a.rarity !== 'string' || !(a.size > 0) || !nonNeg(a.cost)) { p.push('Hewan rusak'); break; }
-    if (!Array.isArray(f.habs) || f.habs.length !== f.slots.length || f.habs.some((x) => typeof x !== 'string')) p.push('Habitat rusak');
-    if (!Array.isArray(f.levels) || f.levels.length !== f.slots.length || f.levels.some((x) => !Number.isInteger(x) || x < 1 || x > 3)) p.push('Level lahan rusak');
+    if (!Array.isArray(f.habs) || f.habs.length !== f.slots.length || f.habs.some((x) => typeof x !== 'string' || !HABITATS.some((h) => h.id === x))) p.push('Habitat rusak');
+    else for (const h of HABITATS) if (f.habs.filter((x) => x === h.id).length > h.max) p.push(`Terlalu banyak ${h.name}`);
+    if (!Array.isArray(f.levels) || f.levels.length !== f.slots.length || f.levels.some((x) => !Number.isInteger(x) || x < 1 || x > MAX_SPOT_LEVEL)) p.push('Level lahan rusak');
     for (const lots of f.slots) {
       if (!Array.isArray(lots)) { p.push('Kolam rusak'); break; }
-      if (lots.some((sl) => !sl || typeof sl.itemId !== 'string' || !nonNeg(sl.plantedAt) || !nonNeg(sl.readyAt) || (sl.qty !== undefined && (!Number.isInteger(sl.qty) || sl.qty < 1 || sl.qty > 12)))) { p.push('Kolam rusak'); break; }
+      if (lots.some((sl) => !sl || typeof sl.itemId !== 'string' || !nonNeg(sl.plantedAt) || !nonNeg(sl.readyAt) || (sl.qty !== undefined && (!Number.isInteger(sl.qty) || sl.qty < 1 || sl.qty > MAX_LOT_QTY)))) { p.push('Kolam rusak'); break; }
     }
   }
   if (!s.story || !nonNeg(s.story.ch) || typeof s.story.done !== 'boolean') p.push('Cerita rusak');
@@ -169,6 +172,8 @@ export function deserialize(text) {
   let state;
   try {
     state = migrate(JSON.parse(wrapper.data));
+    // Tahap 1: simpanan lama (3 jenis tempat) diubah ke 5 jenis tempat, maksimal 2 per jenis.
+    migrateFarmV13(state);
   } catch {
     throw new Error('Isi simpanan rusak');
   }
