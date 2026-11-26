@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { GameEngine, newState, migrate } from '../src/core/engine.js';
 import { auditLedger, credit } from '../src/core/ledger.js';
 import { validateState, serialize, deserialize } from '../src/core/save.js';
-import { RARITIES, rarityWeights, rollRarity, expectedMult, FEEDS, EGGS, animalValue, PET_KINDS } from '../src/core/farm.js';
+import { RARITIES, rarityWeights, rollRarity, expectedMult, FEEDS, EGGS, animalValue, PET_KINDS, HAB_LEVEL_CAPS, HABITATS, migrateFarmV13 } from '../src/core/farm.js';
 import { mulberry32 } from '../src/core/rng.js';
 import { slotCap as farmCap } from '../src/core/farm.js';
 import { makeClock, farmRound, serveDay } from './farmbot.js';
@@ -86,7 +86,7 @@ describe('peternakan', () => {
   it('peluang rarity berjumlah 100% dan pakan mahal menggeser ke rarity tinggi', () => {
     expect(rarityWeights(0).reduce((a, b) => a + b, 0)).toBeCloseTo(1, 10);
     let prev = expectedMult(0);
-    for (const f of FEEDS) { const v = expectedMult(f.luck); expect(v).toBeGreaterThan(prev); prev = v; }
+    for (const f of FEEDS.filter((x) => !x.hab)) { const v = expectedMult(f.luck); expect(v).toBeGreaterThan(prev); prev = v; }
     const rng = mulberry32(7);
     const n = 20000; const c = new Array(RARITIES.length).fill(0);
     for (let i = 0; i < n; i++) c[rollRarity(rng, 0)] += 1;
@@ -99,16 +99,16 @@ describe('peternakan', () => {
     expect(run()).toEqual(run());
   });
 
-  it('kolam tambahan dibayar sesuai harga dan ada batasnya', () => {
+  it('lahan tambahan dibayar sesuai harga dan ada batasnya (maksimal 10 lahan)', () => {
     const { e } = mk();
     e.state.ledger.balance = 10_000_000; e.state.ledger.opening = 10_000_000;
-    for (let i = 0; i < 8; i++) e.buySlot();
-    expect(e.state.farm.slots.length).toBe(11);
-    expect(e.state.farm.habs.length).toBe(11);
+    for (let i = 0; i < 7; i++) e.buySlot();
+    expect(e.state.farm.slots.length).toBe(10);
+    expect(e.state.farm.habs.length).toBe(10);
     expect(() => e.buySlot()).toThrow();
   });
 
-  it('habitat membatasi spesies: ikan hanya di kolam, burung hanya di kandang', () => {
+  it('habitat membatasi spesies: ikan hanya di kolam, burung hanya di sangkar', () => {
     const { e } = mk();
     e.state.ledger.balance = 5_000_000; e.state.ledger.opening = 5_000_000;
     e.buyBibit('lele', 1); e.buyBibit('cacing', 1);
@@ -118,8 +118,9 @@ describe('peternakan', () => {
     e.plant(0, 'cacing', null);
     expect(() => e.buySlot('kebun')).not.toThrow();
     expect(() => e.buySlot('kebun')).toThrow(); // kebun maksimum 2
-    e.buySlot('kandang');
-    expect(e.state.farm.habs.at(-1)).toBe('kandang');
+    e.buySlot('burung');
+    expect(e.state.farm.habs.at(-1)).toBe('burung');
+    expect(() => e.buySlot('kandang')).toThrow(); // jenis lama sudah dipecah
   });
 
   it('simpanan v5 dimigrasi ke v6 dengan habitat dan cerita', () => {
@@ -132,7 +133,64 @@ describe('peternakan', () => {
     expect(m.farm.habs.length).toBe(4);
     expect(m.farm.habs[1]).toBe('kolam');
     expect(m.story.ch).toBe(0);
+    migrateFarmV13(m);
     expect(validateState(m)).toEqual([]);
+  });
+});
+
+describe('tahap 1: 5 jenis tempat, level 15, pakan khusus', () => {
+  it('tiap jenis tempat maksimal 2 dan total 10 lahan', () => {
+    const { e } = mk();
+    e.state.ledger.balance = 10_000_000; e.state.ledger.opening = 10_000_000;
+    e.buySlot('kebun');
+    for (const h of ['kecil', 'burung', 'reptil']) { e.buySlot(h); e.buySlot(h); expect(() => e.buySlot(h)).toThrow(); }
+    expect(e.state.farm.slots.length).toBe(10);
+    for (const h of HABITATS) expect(e.state.farm.habs.filter((x) => x === h.id)).toHaveLength(2);
+    expect(() => e.buySlot()).toThrow();
+  });
+
+  it('level lahan sampai 15 dan Lv 15 muat 30 ekor; Lv 1-3 tetap 2/4/6', () => {
+    const { e } = mk();
+    e.state.ledger.balance = 1e12; e.state.ledger.opening = 1e12;
+    expect(HAB_LEVEL_CAPS).toHaveLength(15);
+    expect(HAB_LEVEL_CAPS.slice(0, 3)).toEqual([2, 4, 6]);
+    expect(HAB_LEVEL_CAPS[14]).toBe(30);
+    for (let i = 0; i < 14; i++) e.upgradeSpot(1);
+    expect(farmCap(e, 1)).toBe(30);
+    expect(() => e.upgradeSpot(1)).toThrow('maksimum');
+    expect(auditLedger(e.state.ledger)).toEqual([]);
+    expect(validateState(deserialize(serialize(e.state)))).toEqual([]);
+  });
+
+  it('pakan khusus hanya cocok di jenis tempatnya', () => {
+    const { e } = mk();
+    e.state.ledger.balance = 1_000_000; e.state.ledger.opening = 1_000_000;
+    e.state.shopLevel = 2;
+    e.buyBibit('lele', 2);
+    e.buyFeed('plankton', 1); e.buyFeed('sayur', 1);
+    expect(() => e.plant(1, 'lele', 'sayur', 1)).toThrow(/tidak cocok/);
+    e.plant(1, 'lele', 'plankton', 1);
+    expect(e.state.farm.feeds.plankton).toBeUndefined();
+  });
+
+  it('migrasi: kandang lama dibagi ke 3 jenis, kolam ke-3 dan ke-4 dikembalikan uangnya', () => {
+    const { e } = mk(11);
+    const s = e.state; const fm = s.farm;
+    fm.habs = ['kebun', 'kolam', 'kolam', 'kolam', 'kolam', 'kandang', 'kandang', 'kandang'];
+    fm.slots = [[], [], [], [{ itemId: 'lele', feed: null, plantedAt: 0, readyAt: 1, qty: 2, cost: 10 }], [], [], [], []];
+    fm.levels = [1, 1, 1, 2, 1, 1, 1, 1];
+    delete fm.habsV13;
+    const before = s.ledger.balance;
+    const r = migrateFarmV13(s);
+    expect(r).toEqual({ refund: 6000 + 10000 + 15000, removed: 2 });
+    expect(s.ledger.balance - before).toBe(31000);
+    expect(fm.habs).toEqual(['kebun', 'kolam', 'kolam', 'kecil', 'burung', 'reptil']);
+    expect(fm.slots).toHaveLength(6);
+    expect(fm.levels).toHaveLength(6);
+    expect(fm.bibit.lele).toBe(2); // penghuni kolam yang dihapus kembali menjadi bibit
+    expect(migrateFarmV13(s)).toEqual({ refund: 0, removed: 0 }); // hanya sekali
+    expect(auditLedger(s.ledger)).toEqual([]);
+    expect(validateState(s)).toEqual([]);
   });
 });
 
@@ -316,7 +374,7 @@ describe('lahan berlevel dengan daftar penghuni', () => {
     expect(b - e.state.ledger.balance).toBeGreaterThan(0);
     expect(farmCap(e, 1)).toBe(4);
     e.upgradeSpot(1);
-    expect(() => e.upgradeSpot(1)).toThrow('maksimum');
+    expect(farmCap(e, 1)).toBe(6);
     clock.t += 600_000;
     expect(e.spotReady(1)).toBe(2);
     const got = e.harvestSpot(1);
@@ -334,6 +392,7 @@ describe('lahan berlevel dengan daftar penghuni', () => {
     expect(m.v).toBe(12);
     expect(m.farm.slots[1].length).toBe(1);
     expect(m.farm.levels).toEqual([1, 3, 1]);
+    migrateFarmV13(m);
     expect(validateState(m)).toEqual([]);
   });
 });
@@ -416,7 +475,7 @@ describe('pencuri di kolam', () => {
   it('satpam hanya menjaga kolam, kandang tidak terlindungi', () => {
     const e = mkE();
     withLots(e);
-    e.state.farm.habs[0] = 'kandang';
+    e.state.farm.habs[0] = 'burung';
     e.state.crew.hired.push({ uid: 9, type: 'satpam', lvl: 1 });
     expect(e.thiefCaught(0)).toBe(false);
     expect(e.resolveThief().stolen).toBe(true);
