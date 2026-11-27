@@ -2,6 +2,7 @@
 // (luck, grow, value, patience, tip), jadi tidak ada aturan ekonomi baru yang perlu dikhawatirkan.
 import { PET_KINDS } from './core/farm.js';
 import { petSVG as basePetSVG } from './art.svg.js';
+import { frameSVG, petFrameName } from './aset.js';
 
 const OUT = '#3b2a1c';
 const st = `stroke="${OUT}" stroke-width="1.8"`;
@@ -72,7 +73,14 @@ const ART = {
     <circle cx="13" cy="31" r="3" fill="#fb7185" opacity=".6"/><circle cx="35" cy="31" r="3" fill="#fb7185" opacity=".6"/>`,
 };
 
-export function petArt(kind, color) {
+// Gambar vektor buatan kode (dipakai untuk tekstur peta dan sebagai cadangan bila aset PNG belum ada).
+export function petArtVector(kind, color) {
   if (ART[kind]) return wrap(`${ART[kind]()}${color ? `<circle cx="42" cy="8" r="4" fill="${color}" ${st}/>` : ''}`);
   return basePetSVG(kind, color);
+}
+
+// Gambar pet untuk antarmuka (DOM): memakai aset PNG bila atlasnya ada, termasuk tahap evolusi (0, 1, 2).
+export function petArt(kind, color, stage = 0) {
+  const px = frameSVG(petFrameName(kind, stage), 96) || (stage > 0 ? frameSVG(petFrameName(kind, 0), 96) : null);
+  return px || petArtVector(kind, color);
 }
