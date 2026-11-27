@@ -1,13 +1,18 @@
 // Pasang gambar tempat berlevel ke WorldScene tanpa mengubah file besarnya:
 // memuat 75 tekstur (5 jenis x 15 level), mengganti gambar dasar lahan menurut level,
 // memberi nama tiap tempat, dan menggerakkan hewan kandang baru seperti di dalam sangkar.
+// Juga memuat gambar 7 pet baru dan memasang layar gacha (Tahap 3).
 import { WorldScene } from './WorldScene.js';
 import { HABITATS, HAB_LEVEL_CAPS, habZone, getHabitat } from '../core/farm.js';
 import { habSVG, habKey } from '../art.habs.js';
 import { svgUri } from '../art.svg.js';
+import { NEW_PET_KINDS, petArt } from '../pets.js';
+import '../gachascreens.js';
 
 const preload0 = WorldScene.prototype.preload;
 WorldScene.prototype.preload = function preload() {
+  // Pet baru dimuat lebih dulu supaya gambarnya yang dipakai (kunci yang sama tidak dimuat dua kali).
+  for (const k of NEW_PET_KINDS) this.load.svg(`pet_${k.id}`, svgUri(petArt(k.id, null)), { scale: 2.5 });
   preload0.call(this);
   for (const h of HABITATS) {
     for (let lv = 1; lv <= HAB_LEVEL_CAPS.length; lv++) this.load.svg(habKey(h.id, lv), svgUri(habSVG(h.id, lv)), { scale: 2 });
