@@ -1,13 +1,17 @@
 // Pasang gambar tempat berlevel ke WorldScene tanpa mengubah file besarnya:
 // memuat 75 tekstur (5 jenis x 15 level), mengganti gambar dasar lahan menurut level,
 // memberi nama tiap tempat, dan menggerakkan hewan kandang baru seperti di dalam sangkar.
-// Juga memuat gambar 7 pet baru dan memasang layar gacha (Tahap 3).
+// Juga memuat gambar 7 pet baru, memasang layar gacha (Tahap 3) dan Petualangan (Tahap 4),
+// serta penjaga anti-macet: karakter tidak bisa bergerak dan peta hitam setelah kembali ke game.
 import { WorldScene } from './WorldScene.js';
+import { SPOTS } from './worldmap.js';
 import { HABITATS, HAB_LEVEL_CAPS, habZone, getHabitat } from '../core/farm.js';
 import { habSVG, habKey } from '../art.habs.js';
 import { svgUri } from '../art.svg.js';
 import { NEW_PET_KINDS, petArt } from '../pets.js';
+import { UI } from '../ui.js';
 import '../gachascreens.js';
+import '../rpgscreens.js';
 
 const preload0 = WorldScene.prototype.preload;
 WorldScene.prototype.preload = function preload() {
@@ -54,4 +58,82 @@ WorldScene.prototype._updatePlots = function updatePlots(time, force) {
       occ.setFlipX(Math.cos(t * 0.6) < 0);
     });
   }
+};
+
+// ---------- Penjaga anti-macet ----------
+// 1) Panel yang tertinggal: setelah menutup panel, semua lapisan .overlay sisa dibuang supaya tidak menghalangi sentuhan ke peta.
+const close0 = UI.prototype._close;
+UI.prototype._close = function close() {
+  close0.call(this);
+  const root = document.getElementById('modal-root');
+  if (root && !this.askNode) for (const n of [...root.children]) if (n.classList && n.classList.contains('overlay')) n.remove();
+};
+
+function installGuards(scene) {
+  const game = scene.game;
+  const canvas = game.canvas;
+
+  // 2) Kecepatan jalan tidak boleh NaN atau nol.
+  const eng = scene.engine;
+  if (typeof eng.walkMul === 'function' && !eng._walkPatched) {
+    const orig = eng.walkMul.bind(eng);
+    eng.walkMul = () => { const v = orig(); return Number.isFinite(v) && v > 0 ? v : 1; };
+    eng._walkPatched = true;
+  }
+
+  // 3) Peta hitam setelah keluar-masuk game: konteks WebGL hilang atau halaman dipulihkan dari cache.
+  canvas?.addEventListener('webglcontextlost', (ev) => ev.preventDefault());
+  canvas?.addEventListener('webglcontextrestored', () => setTimeout(() => location.reload(), 150));
+  window.addEventListener('pageshow', (ev) => { if (ev.persisted) location.reload(); });
+  const recover = () => {
+    try {
+      const gl = game.renderer && game.renderer.gl;
+      if (gl && gl.isContextLost && gl.isContextLost()) { setTimeout(() => { if (gl.isContextLost()) location.reload(); }, 2500); return; }
+      const host = document.getElementById('game');
+      if (host && host.clientWidth > 2 && host.clientHeight > 2) {
+        const dpr = game.scale.zoom ? 1 / game.scale.zoom : 1;
+        game.scale.resize(Math.round(host.clientWidth * dpr), Math.round(host.clientHeight * dpr));
+      }
+      const loop = game.loop;
+      if (loop && loop.running === false) loop.wake(true);
+      if (scene.scene.isPaused()) scene.scene.resume();
+      if (scene.scene.isSleeping()) scene.scene.wake();
+      if (!scene.input.enabled) scene.input.enabled = true;
+      scene.drag = null;
+    } catch (err) { console.warn('pemulihan layar gagal', err); }
+  };
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { setTimeout(recover, 200); setTimeout(recover, 1200); } });
+  window.addEventListener('focus', () => setTimeout(recover, 200));
+
+  // 4) Karakter macet: posisi tak valid, berdiri di sel terblokir, atau jalur tak bergerak lebih dari ~2 detik.
+  let lastPos = '';
+  let still = 0;
+  setInterval(() => {
+    if (document.hidden) return;
+    const p = scene.player;
+    if (!p || !scene.nav) return;
+    if (!Number.isFinite(p.x) || !Number.isFinite(scene.playerY)) {
+      p.x = SPOTS.start.x; scene.playerY = SPOTS.start.y; scene.path = []; scene.pathThen = null; return;
+    }
+    if (!scene.nav.walkable(p.x, scene.playerY)) {
+      const c = scene.nav.nearestFree(p.x, scene.playerY);
+      if (c) { const q = scene.nav.center(c[0], c[1]); p.x = q.x; scene.playerY = q.y; scene.path = []; scene.pathThen = null; }
+    }
+    const key = `${Math.round(p.x)}:${Math.round(scene.playerY)}`;
+    if (scene.path && scene.path.length && key === lastPos) {
+      still += 1;
+      if (still >= 3) {
+        scene.path = []; scene.pathThen = null; still = 0;
+        if (scene.dest) { scene.dest.destroy(); scene.dest = null; }
+      }
+    } else still = 0;
+    lastPos = key;
+    if (!scene.input.enabled) scene.input.enabled = true;
+  }, 700);
+}
+
+const create0 = WorldScene.prototype.create;
+WorldScene.prototype.create = function create() {
+  create0.call(this);
+  try { installGuards(this); } catch (err) { console.warn('penjaga anti-macet gagal dipasang', err); }
 };
