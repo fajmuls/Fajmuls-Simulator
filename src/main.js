@@ -5,6 +5,7 @@ import { GameEngine, newState } from './core/engine.js';
 import { SaveManager, serialize, deserialize, validateState } from './core/save.js';
 import { auditLedger, credit } from './core/ledger.js';
 import { WorldScene } from './game/WorldScene.js';
+import './game/habvisuals.js';
 import { UI, toast, h, getA11y } from './ui.js';
 import './screens.js';
 import './farmscreens.js';
