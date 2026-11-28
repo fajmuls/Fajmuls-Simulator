@@ -1,8 +1,10 @@
 // Layar Petualangan: tab tambahan di rumah Pet. Dipasang dengan membungkus UI.prototype.openPet
 // (dari gachascreens.js) supaya tidak perlu menulis ulang layar Pet.
+// Gambar zona dan musuh/bos memakai aset PNG bila atlasnya ada (spriteEl mengembalikan null bila tidak).
 import { UI, h, rp } from './ui.js';
 import './gachascreens.js';
 import * as rpg from './core/rpg.js';
+import { spriteEl } from './aset.js';
 
 const P = UI.prototype;
 
@@ -23,11 +25,17 @@ function rpgNodes(ui) {
     const boss = run.floor === z.floors;
     const pc = (a) => Math.round(rpg.winChance(power, E, a) * 100);
     const act = (a) => () => ui.act(() => rpg.step(e, a), null, a === 'mundur' ? 'coin' : 'ok');
+    const banner = spriteEl(`zona_${z.id}`, 300, 'banner');
+    const foe = spriteEl(`${boss ? 'bos' : 'musuh'}_${z.id}`, boss ? 120 : 96, 'foe');
     out.push(h('div', { class: `card${boss ? ' warn' : ''}` },
+      banner ? h('div', { style: 'text-align:center' }, banner) : null,
       h('div', { class: 'card-top' }, h('b', {}, `${z.icon} ${z.name}`), h('span', { class: 'badge' }, `Lantai ${run.floor}/${z.floors}`)),
-      h('div', { class: 'sub' }, `${boss ? `BOS ${z.boss}` : 'Musuh'} kekuatan ${E} · party ${power}`),
-      h('div', { class: 'sub' }, `HP ${Math.max(0, run.hp)}/100`),
-      h('div', { class: 'meter' }, h('i', { style: `width:${Math.max(0, Math.min(100, run.hp))}%` })),
+      h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px;align-items:center' },
+        foe,
+        h('div', { class: 'grow' },
+          h('div', { class: 'sub' }, `${boss ? `BOS ${z.boss}` : 'Musuh'} kekuatan ${E} · party ${power}`),
+          h('div', { class: 'sub' }, `HP ${Math.max(0, run.hp)}/100`),
+          h('div', { class: 'meter' }, h('i', { style: `width:${Math.max(0, Math.min(100, run.hp))}%` })))),
       h('div', { class: 'row', style: 'gap:8px;margin-top:6px' },
         h('button', { class: 'btn small grow', onClick: act('serang') }, `Serang ${pc('serang')}%`),
         h('button', { class: 'btn small secondary grow', onClick: act('hati') }, `Hati-hati ${pc('hati')}%`)),
@@ -52,9 +60,13 @@ function rpgNodes(ui) {
 
   for (const z of rpg.ZONES) {
     const done = r.clears[z.id] || 0;
+    const thumb = spriteEl(`zona_${z.id}`, 150, 'banner');
     out.push(h('div', { class: 'card' },
-      h('div', { class: 'card-top' }, h('b', {}, `${z.icon} ${z.name}`), h('span', { class: 'badge' }, `${done}/${z.floors} lantai`)),
-      h('div', { class: 'sub' }, z.desc),
+      h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px;align-items:center' },
+        thumb,
+        h('div', { class: 'grow' },
+          h('div', { class: 'card-top' }, h('b', {}, `${z.icon} ${z.name}`), h('span', { class: 'badge' }, `${done}/${z.floors} lantai`)),
+          h('div', { class: 'sub' }, z.desc))),
       h('div', { class: 'sub' }, `Musuh kekuatan ${rpg.enemyPower(z, 1)} sampai ${rpg.enemyPower(z, z.floors)} (bos ${z.boss})`),
       h('button', { class: 'btn small', disabled: r.energy < 1 || power <= 0, onClick: () => ui.act(() => rpg.startRun(e, z.id), `Masuk ${z.name}`, 'ok') }, 'Mulai (1 energi)')));
   }

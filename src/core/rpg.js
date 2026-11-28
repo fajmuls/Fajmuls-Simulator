@@ -50,7 +50,8 @@ export function partyPower(e) {
     const p = pets.owned.find((x) => x.id === id);
     if (p) sum += petPower(p);
   }
-  return Math.round(sum * (1 + 0.06 * attr(e, 'ketangkasan')) * 10) / 10;
+  // Atribut Ketangkasan di game ini bernama 'tangkas'.
+  return Math.round(sum * (1 + 0.06 * attr(e, 'tangkas')) * 10) / 10;
 }
 
 export const enemyPower = (z, floor) => Math.round(z.base * (1 + 0.3 * (floor - 1)) * (floor === z.floors ? 1.5 : 1) * 10) / 10;
