@@ -2,25 +2,51 @@
 // memuat 75 tekstur (5 jenis x 15 level), mengganti gambar dasar lahan menurut level,
 // memberi nama tiap tempat, dan menggerakkan hewan kandang baru seperti di dalam sangkar.
 // Juga memuat gambar 7 pet baru, memasang layar gacha (Tahap 3) dan Petualangan (Tahap 4),
-// serta penjaga anti-macet: karakter tidak bisa bergerak dan peta hitam setelah kembali ke game.
+// aset PNG kustom (bila ada), serta penjaga anti-macet: karakter tidak bisa bergerak dan peta hitam.
 import { WorldScene } from './WorldScene.js';
 import { SPOTS } from './worldmap.js';
-import { HABITATS, HAB_LEVEL_CAPS, habZone, getHabitat } from '../core/farm.js';
+import { HABITATS, HAB_LEVEL_CAPS, PET_KINDS, habZone, getHabitat } from '../core/farm.js';
 import { habSVG, habKey } from '../art.habs.js';
 import { svgUri } from '../art.svg.js';
-import { NEW_PET_KINDS, petArt } from '../pets.js';
+import { NEW_PET_KINDS, petArtVector } from '../pets.js';
+import { ATLAS, ASET_BASE, probeAssets } from '../aset.js';
 import { UI } from '../ui.js';
 import '../gachascreens.js';
 import '../rpgscreens.js';
 
+// Periksa file atlas gambar sedini mungkin supaya layar Pet dan Petualangan bisa memakainya.
+probeAssets();
+
+const PET_TEX = 120; // ukuran tekstur pet di peta (sama dengan gambar vektor lama)
+
+// Mengganti tekstur pet di peta dengan gambar PNG dari atlas (bila atlasnya berhasil dimuat).
+function swapPetTextures(scene) {
+  try {
+    if (!scene.textures.exists('a_pet')) return;
+    const src = scene.textures.get('a_pet').getSourceImage();
+    for (const k of PET_KINDS) {
+      const f = ATLAS.pet.frames[`pet_${k.id}`];
+      if (!f) continue;
+      const cv = document.createElement('canvas');
+      cv.width = PET_TEX; cv.height = PET_TEX;
+      cv.getContext('2d').drawImage(src, f[0], f[1], f[2], f[3], 0, 0, PET_TEX, PET_TEX);
+      if (scene.textures.exists(`pet_${k.id}`)) scene.textures.remove(`pet_${k.id}`);
+      scene.textures.addCanvas(`pet_${k.id}`, cv);
+    }
+  } catch (err) { console.warn('tekstur pet kustom gagal dipasang', err); }
+}
+
 const preload0 = WorldScene.prototype.preload;
 WorldScene.prototype.preload = function preload() {
   // Pet baru dimuat lebih dulu supaya gambarnya yang dipakai (kunci yang sama tidak dimuat dua kali).
-  for (const k of NEW_PET_KINDS) this.load.svg(`pet_${k.id}`, svgUri(petArt(k.id, null)), { scale: 2.5 });
+  for (const k of NEW_PET_KINDS) this.load.svg(`pet_${k.id}`, svgUri(petArtVector(k.id, null)), { scale: 2.5 });
   preload0.call(this);
   for (const h of HABITATS) {
     for (let lv = 1; lv <= HAB_LEVEL_CAPS.length; lv++) this.load.svg(habKey(h.id, lv), svgUri(habSVG(h.id, lv)), { scale: 2 });
   }
+  // Atlas pet kustom (opsional): bila file tidak ada, pemuatan gagal diam-diam dan gambar vektor tetap dipakai.
+  this.load.image('a_pet', ASET_BASE + ATLAS.pet.file);
+  this.load.once('complete', () => swapPetTextures(this));
 };
 
 const refresh0 = WorldScene.prototype.refreshFarm;
