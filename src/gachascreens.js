@@ -1,13 +1,16 @@
 // Layar Pet dengan gacha 1x dan 10x, animasi buka telur, sorotan pet terbaik, dan opsi lewati animasi.
 // Menggantikan UI.prototype.openPet dari farmscreens.js (modul ini selalu dimuat setelahnya).
+// Gambar pet memakai aset PNG (termasuk evolusi Lv 10 dan 20) bila atlasnya ada; efek tiap pet unik (lihat core/gear.js).
 import { UI, h, rp } from './ui.js';
 import './farmscreens.js';
 import {
-  RARITIES, EGGS, PET_KINDS, rarityIdx, rarityWeights, petBuffValue, getPetKind, petExpandCost, petSellValue,
+  RARITIES, EGGS, PET_KINDS, rarityIdx, rarityWeights, getPetKind, petExpandCost, petSellValue,
 } from './core/farm.js';
+import { petEffectText } from './core/gear.js';
 import { eggSVG, svgEl } from './art.svg.js';
 import { audio } from './audio.js';
 import { petArt } from './pets.js';
+import { petStage } from './aset.js';
 
 const P = UI.prototype;
 
@@ -147,8 +150,8 @@ P.openPet = function openPet() {
         const p = this.lastHatch;
         const r = RARITIES[rarityIdx(p.rarity)];
         out.push(h('div', { class: 'card hero hatched', style: `border-color:${r.color}` },
-          h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px' }, svgEl(petArt(p.kind, r.color), 56, 'bounce'),
-            h('div', { class: 'grow' }, h('b', {}, `Terakhir: ${getPetKind(p.kind).name}`), p.autoSold ? h('div', { class: 'sub good' }, `Otomatis terjual ${rp(p.autoSold)}`) : null, h('div', {}, rarTag(r)), h('div', { class: 'sub' }, getPetKind(p.kind).text(petBuffValue(p)))))));
+          h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px' }, svgEl(petArt(p.kind, r.color, petStage(p)), 56, 'bounce'),
+            h('div', { class: 'grow' }, h('b', {}, `Terakhir: ${getPetKind(p.kind).name}`), p.autoSold ? h('div', { class: 'sub good' }, `Otomatis terjual ${rp(p.autoSold)}`) : null, h('div', {}, rarTag(r)), h('div', { class: 'sub' }, petEffectText(e, p))))));
       }
       for (const egg of EGGS) {
         const btn = (n) => h('button', {
@@ -204,7 +207,7 @@ P.openPet = function openPet() {
     const slots = e.petSlots();
     out.push(h('div', { class: 'card' },
       h('b', {}, `Slot pet terpakai ${pets.equipped.length}/${slots}`),
-      h('div', { class: 'sub' }, 'Pet yang dipasang memberi buff. Pet yang dilepas dari slot tetap tersimpan di inventori; jual hanya bila kamu mau.')));
+      h('div', { class: 'sub' }, 'Pet yang dipasang memberi efek uniknya sendiri. Pet yang dilepas dari slot tetap tersimpan di inventori; jual hanya bila kamu mau.')));
     if (!pets.owned.length) out.push(h('div', { class: 'card' }, 'Belum punya pet. Tetaskan telur di tab Telur.'));
     const spare = pets.owned.filter((p) => !pets.equipped.includes(p.id) && rarityIdx(p.rarity) <= 1);
     if (spare.length) {
@@ -216,8 +219,8 @@ P.openPet = function openPet() {
       const r = RARITIES[rarityIdx(p.rarity)];
       const on = pets.equipped.includes(p.id);
       out.push(h('div', { class: `card${on ? ' hero' : ''}`, style: `border-left:5px solid ${r.color}` },
-        h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px' }, svgEl(petArt(p.kind, r.color), 44),
-          h('div', { class: 'grow' }, h('b', {}, getPetKind(p.kind).name), h('div', {}, rarTag(r), on ? h('span', { class: 'badge good', style: 'margin-left:6px' }, 'dipasang') : null), h('div', { class: 'sub' }, getPetKind(p.kind).text(petBuffValue(p))))),
+        h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:10px' }, svgEl(petArt(p.kind, r.color, petStage(p)), 44),
+          h('div', { class: 'grow' }, h('b', {}, getPetKind(p.kind).name, (p.lv || 1) > 1 ? h('span', { class: 'badge', style: 'margin-left:6px' }, `Lv ${p.lv}`) : null), h('div', {}, rarTag(r), on ? h('span', { class: 'badge good', style: 'margin-left:6px' }, 'dipasang') : null), h('div', { class: 'sub' }, petEffectText(e, p)))),
         h('div', { class: 'row' },
           h('button', { class: `btn small ${on ? 'secondary' : ''}`, onClick: () => this.act(() => (on ? e.unequipPet(p.id) : e.equipPet(p.id)), on ? 'Pet disimpan di inventori' : 'Pet dipasang', 'ok') }, on ? 'Lepas dari slot' : 'Pasang'),
           h('button', { class: 'btn small secondary', onClick: () => { const go = () => this.act(() => e.sellPet(p.id), (v) => `Pet terjual ${rp(v)}`, 'coin'); if (rarityIdx(p.rarity) >= e.state.policy.petConfirm) this.ask('Pet ini langka. Yakin dijual? (tetap tercatat di Buku Koleksi)', go, { yes: 'Jual', danger: true }); else go(); } }, `Jual ${rp(petSellValue(p))}`))));
