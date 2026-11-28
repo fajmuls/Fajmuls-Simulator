@@ -62,7 +62,6 @@ function gearTab(ui) {
   const g = gear.ensureGear(e);
   const bal = e.state.ledger.balance;
   const out = [];
-  // Bahan upgrade
   out.push(h('div', { class: 'card' },
     h('b', {}, 'Bahan upgrade'),
     h('div', { class: 'row', style: 'gap:8px' }, ...gear.MATS.map((m) => h('div', { class: 'row', style: 'flex-wrap:nowrap;gap:6px;align-items:center' },
@@ -70,11 +69,9 @@ function gearTab(ui) {
       h('b', {}, `${m.name} ${g.mats[m.id] || 0}`),
       h('button', { class: 'btn small secondary', disabled: bal < m.price * 5, onClick: () => ui.act(() => gear.buyMat(e, m.id, 5), `5 ${m.name} dibeli`, 'coin') }, `+5 · ${rp(m.price * 5)}`)))),
     h('div', { class: 'sub' }, 'Bahan juga dibeli di sini. Naik dari level N ke N+1 butuh N bahan dan uang.')));
-  // Ringkasan perk aktif
   const active = gear.SLOTS.map((s) => g.equipped[s.id]).filter(Boolean).map((id) => gear.getGear(id));
   out.push(h('div', { class: 'card hero' }, h('b', {}, 'Perk aktif dari perlengkapan'),
     ...(active.length ? active.map((it) => h('div', { class: 'sub' }, `• ${gear.perkOf(it).name} +${gear.gearRank(it, g.owned[it.id])} (${it.name} Lv ${g.owned[it.id]})`)) : [h('div', { class: 'sub' }, 'Belum ada yang dipakai.')])));
-  // Pilih slot
   ui.karSlot ||= 'topi';
   out.push(ui.chips(gear.SLOTS.map((s) => ({ id: s.id, label: `${s.icon} ${s.name}` })), ui.karSlot, (id) => { ui.karSlot = id; ui.rerender(); }));
   const slot = gear.getSlot(ui.karSlot);
@@ -142,8 +139,18 @@ function openKarakter() {
 }
 
 P.openKarakter = openKarakter;
-// Ganti layar skill lama (cari metode yang memanggil learnSkill) dengan layar Karakter.
-const cand = Object.getOwnPropertyNames(P).filter((n) => typeof P[n] === 'function' && n !== 'openKarakter' && P[n].toString().includes('learnSkill'));
-const name = cand.find((n) => /skill/i.test(n)) || cand[0];
-if (name) P[name] = function openKarakterReplacement() { return openKarakter.call(this); };
-else if (typeof console !== 'undefined') console.warn('layar skill lama tidak ditemukan; gunakan UI.openKarakter()');
+
+// Ganti layar skill lama dengan layar Karakter. PENTING: baca lewat deskriptor properti, jangan lewat P[n],
+// karena P[n] memanggil getter (misalnya get e()) pada prototipe dan melempar error saat modul dimuat.
+try {
+  const cand = Object.getOwnPropertyNames(P).filter((n) => {
+    if (n === 'constructor' || n === 'openKarakter') return false;
+    const d = Object.getOwnPropertyDescriptor(P, n);
+    return !!d && typeof d.value === 'function' && String(d.value).includes('learnSkill');
+  });
+  const name = cand.find((n) => /skill/i.test(n)) || cand[0];
+  if (name) P[name] = function openKarakterReplacement() { return openKarakter.call(this); };
+  else console.warn('layar skill lama tidak ditemukan; gunakan UI.openKarakter()');
+} catch (err) {
+  console.warn('gagal mengganti layar skill lama', err);
+}
