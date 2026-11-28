@@ -2,7 +2,9 @@
 // (dari gachascreens.js) supaya tidak perlu menulis ulang layar Pet.
 // Gambar zona dan musuh/bos memakai aset PNG bila atlasnya ada (spriteEl mengembalikan null bila tidak).
 import { UI, h, rp } from './ui.js';
+import './gearpatch.js';
 import './gachascreens.js';
+import './karakterscreens.js';
 import * as rpg from './core/rpg.js';
 import { spriteEl } from './aset.js';
 
